@@ -1,0 +1,21 @@
+<div class="skeleton-container">
+  <div 
+    *ngIf="variant === 'text' && lines"
+    class="skeleton-text-group"
+  >
+    <div 
+      *ngFor="let line of getLinesArray(); let i = index"
+      class="skeleton skeleton-text"
+      [class]="'animation-' + animation"
+      [style.width]="getLineWidth(i)"
+    ></div>
+  </div>
+  
+  <div 
+    *ngIf="variant !== 'text' || !lines"
+    class="skeleton"
+    [class]="'skeleton-' + variant + ' animation-' + animation"
+    [style.width]="width"
+    [style.height]="height || getDefaultHeight()"
+  ></div>
+</div>

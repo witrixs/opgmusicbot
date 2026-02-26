@@ -1,0 +1,10 @@
+<div class="loader-wrapper" [ngClass]="['size-' + size, inline ? 'inline' : null]">
+  <div class="loader" [ngClass]="['color-' + color]">
+    <div class="spinner">
+      <div class="spinner-ring"></div>
+      <div class="spinner-ring"></div>
+      <div class="spinner-ring"></div>
+    </div>
+  </div>
+  <p class="loader-text" *ngIf="text">{{ text }}</p>
+</div>
