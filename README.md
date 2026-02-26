@@ -141,6 +141,51 @@ DEFAULT_VOICE_CHANNEL_ID=your_voice_channel_id
 API_BASE_URL=http://localhost:3000/api
 ```
 
+### YouTube OAuth `refreshToken` для Lavalink
+
+YouTube-плагин Lavalink использует OAuth, поэтому в `backend/lavalink/application.yml` в блоке `plugins.youtube.oauth` нужен валидный `refreshToken`:
+
+```yaml
+plugins:
+  youtube:
+    enabled: true
+    allowSearch: true
+    allowDirectVideoIds: true
+    allowDirectPlaylistIds: true
+    oauth:
+      enabled: true
+      refreshToken: "YOUR_REFRESH_TOKEN_HERE"
+      skipInitialization: true
+```
+
+Как получить `refreshToken` (через Google OAuth Playground — самый простой способ):
+
+1. **Создай проект в Google Cloud**  
+   - Зайди в Google Cloud Console → включи **YouTube Data API v3**.  
+   - Настрой **OAuth consent screen** (достаточно базовой конфигурации).  
+   - В разделе **Credentials** создай OAuth Client ID (типа `Web application` или `Desktop app`).  
+
+2. **Открой OAuth 2.0 Playground**  
+   - Перейди на `https://developers.google.com/oauthplayground`.  
+   - Справа сверху нажми **⚙️ Settings** → включи **Use your own OAuth credentials** и введи **Client ID / Client Secret** из шага выше.  
+
+3. **Получение авторизационного кода**  
+   - В списке API найди **YouTube Data API v3**.  
+   - Отметь нужные scope'ы, обычно достаточно:  
+     - `https://www.googleapis.com/auth/youtube.readonly`  
+   - Нажми **Authorize APIs**, залогинься в нужный Google аккаунт и выдай доступ.  
+
+4. **Обмен кода на токены**  
+   - После авторизации вернёшься в Playground.  
+   - Нажми **Exchange authorization code for tokens**.  
+   - Внизу появится **access_token** и **refresh_token** — скопируй **`refresh_token`**.  
+
+5. **Пропиши токен в `application.yml`**  
+   - Вставь полученное значение в `plugins.youtube.oauth.refreshToken`.  
+   - `skipInitialization` можно оставить в `true`, когда токен уже прописан.  
+
+⚠️ Никогда не публикуй реальный `refreshToken` в публичном репозитории — используй плейсхолдеры в `application.yml` или отдельный `application.example.yml` для GitHub.
+
 ---
 
 ## ✨ Основные функции
@@ -301,6 +346,7 @@ server {
     # HTTP → HTTPS
     return 301 https://$host$request_uri;
 }
+```
 
 ### Nginx (HTTPS + SPA + API proxy)
 
@@ -343,8 +389,7 @@ server {
     Include /etc/letsencrypt/options-ssl-apache.conf
 </VirtualHost>
 </IfModule>
-
-
+```
 ---
 
 **❤️Dev by witrix**
