@@ -250,18 +250,102 @@ npm run build
 
 Дальше можно отдавать `frontend/dist/...` любым статическим сервером или через Nginx.
 
+### Nginx (HTTPS + SPA + API proxy)
+
+```nginx
+server {
+    server_name domain.com;
+
+    # === FRONTEND (SPA) ===
+    root /var/www/opgbot/frontend-opgbot/browser;
+    index index.html;
+
+    # SPA маршруты
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # === BACKEND (API) ===
+    location /api/ {
+        proxy_pass http://127.0.0.1:3000/api/;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # SSE / долгие соединения
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # Чтобы /api без слэша редиректило на /api/
+    location = /api {
+        return 301 /api/;
+    }
+
+    access_log /var/log/nginx/opgbot_access.log;
+    error_log  /var/log/nginx/opgbot_error.log;
+
+    listen 443 ssl http2;
+    ssl_certificate     /etc/letsencrypt/live/domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/domain.com/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+}
+
+server {
+    listen 80;
+    server_name domain.com;
+
+    # HTTP → HTTPS
+    return 301 https://$host$request_uri;
+}
+
+### Nginx (HTTPS + SPA + API proxy)
+
+```apache
+<IfModule mod_ssl.c>
+<VirtualHost *:443>
+    ServerName domain.com
+
+    # === BACKEND (API) ===
+    ProxyPreserveHost On
+    
+    ProxyPass        "/api/"  "http://127.0.0.1:3000/api/"
+    ProxyPassReverse "/api/"  "http://127.0.0.1:3000/api/"
+    
+    # (опционально) чтобы /api без слэша тоже работал
+    RedirectMatch 301 ^/api$ /api/
+
+    # === FRONTEND (SPA) ===
+    DocumentRoot /var/www/opgbot/frontend-opgbot/browser
+
+    <Directory /var/www/opgbot/frontend-opgbot/browser>
+        Options FollowSymLinks
+        AllowOverride All
+        Require all granted
+        DirectoryIndex index.html
+
+        # SPA маршруты
+        RewriteEngine On
+        RewriteCond %{REQUEST_FILENAME} !-f
+        RewriteCond %{REQUEST_FILENAME} !-d
+        RewriteRule ^ /index.html [L]
+    </Directory>
+
+    ErrorLog ${APACHE_LOG_DIR}/app_error.log
+    CustomLog ${APACHE_LOG_DIR}/app_access.log combined
+
+    SSLEngine on
+    SSLCertificateFile /etc/letsencrypt/live/domain.com/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/domain.com/privkey.pem
+    Include /etc/letsencrypt/options-ssl-apache.conf
+</VirtualHost>
+</IfModule>
+
+
 ---
 
-## ⚠️ Перед публикацией на GitHub
-
-Перед пушем **обязательно проверь**, что ты не публикуешь секреты:
-
-- ✅ **Не коммить** `backend/.env`, `frontend/.env`
-- ✅ **Не коммить** `node_modules/`, `dist/`, `.angular/`
-- ⚠️ В `backend/lavalink/application.yml` сейчас могут быть **пароли/токены** (например, YouTube OAuth refresh token).  
-  Для публичного репо лучше хранить пример (`application.example.yml`) с плейсхолдерами, а реальные значения держать локально/в секретах CI.
-
----
-
-**Dev by witrix**
+**❤️Dev by witrix**
 
