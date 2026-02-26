@@ -348,7 +348,7 @@ server {
 }
 ```
 
-### Nginx (HTTPS + SPA + API proxy)
+### Apache (HTTPS + SPA + API proxy)
 
 ```apache
 <IfModule mod_ssl.c>
