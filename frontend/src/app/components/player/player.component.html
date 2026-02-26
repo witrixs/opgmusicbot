@@ -1,0 +1,198 @@
+<div class="player-container">
+  <div class="player-header">
+    <div class="connection-status" [class.connected]="isBotConnected" [class.disconnected]="!isBotConnected">
+      <span class="status-dot"></span>
+      <span class="status-text">{{ isBotConnected ? 'В канале' : 'Не в канале' }}</span>
+    </div>
+  </div>
+  
+  <!-- Форма для ввода трека -->
+  <div class="input-section">
+    <form [formGroup]="trackForm" (ngSubmit)="onPlay()">
+      <div class="input-group">
+        <div class="input-wrapper">
+          <svg class="input-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="m21 21-4.35-4.35"></path>
+          </svg>
+          <input 
+            type="text" 
+            formControlName="query" 
+            placeholder="Введите название трека или URL (YouTube, Spotify и т.д.)"
+            class="track-input"
+            [disabled]="isLoading"
+          />
+        </div>
+        <button 
+          type="submit" 
+          class="btn btn-primary"
+          [disabled]="!trackForm.valid || isLoading"
+        >
+          <span *ngIf="!isLoading" class="btn-content">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+            Воспроизвести
+          </span>
+          <span *ngIf="isLoading" class="btn-content">
+            <app-loader size="sm" color="primary" [inline]="true"></app-loader>
+            Добавляем...
+          </span>
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Текущий трек -->
+  <div class="current-track" *ngIf="playerState?.currentTrack">
+    <div class="track-header">
+      <h3>Сейчас играет</h3>
+      <div class="track-status-badge" 
+           [class.playing]="playerState?.isPlaying && !playerState?.isPaused" 
+           [class.paused]="playerState?.isPaused">
+        <span class="status-icon">
+          <svg *ngIf="playerState?.isPaused" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="4" width="4" height="16"></rect>
+            <rect x="14" y="4" width="4" height="16"></rect>
+          </svg>
+          <svg *ngIf="!playerState?.isPaused" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+        </span>
+        <span>{{ playerState?.isPaused ? 'Пауза' : 'Воспроизведение' }}</span>
+      </div>
+    </div>
+    <div class="track-info">
+      <div class="track-title">{{ playerState?.currentTrack?.title }}</div>
+      <div class="track-author">{{ playerState?.currentTrack?.author }}</div>
+    </div>
+    <div class="track-wave" *ngIf="playerState?.isPlaying && !playerState?.isPaused">
+      <span></span><span></span><span></span><span></span><span></span>
+    </div>
+  </div>
+
+  <div class="no-track" *ngIf="!playerState?.currentTrack">
+    <div class="no-track-icon">
+      <svg width="80" height="80" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <!-- мягкий фон -->
+        <circle cx="32" cy="32" r="26" fill="currentColor" opacity="0.06"></circle>
+
+        <!-- пульсирующие кольца -->
+        <circle class="halo halo-1" cx="32" cy="32" r="23" stroke="currentColor" stroke-width="2" opacity="0.22"></circle>
+        <circle class="halo halo-2" cx="32" cy="32" r="18" stroke="currentColor" stroke-width="2" opacity="0.14"></circle>
+
+        <!-- нота (минималистичный стиль) -->
+        <g class="note" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M36 18v22"></path>
+          <path d="M36 18c5 2 9 1 12 0"></path>
+          <path d="M36 40c0 3.6-2.9 6.5-6.5 6.5S23 43.6 23 40s2.9-6.5 6.5-6.5c2.2 0 4.2 1.1 5.3 2.8"></path>
+          <circle cx="29.5" cy="40" r="3.2" fill="currentColor" opacity="0.22"></circle>
+        </g>
+
+        <!-- частицы -->
+        <g class="particles" fill="currentColor" opacity="0.55">
+          <circle class="particle p1" cx="18" cy="24" r="1.6"></circle>
+          <circle class="particle p2" cx="46" cy="22" r="1.2"></circle>
+          <circle class="particle p3" cx="49" cy="44" r="1.5"></circle>
+          <circle class="particle p4" cx="20" cy="46" r="1.1"></circle>
+        </g>
+      </svg>
+    </div>
+    <p>Нет активного трека</p>
+    <span class="hint">Добавьте трек через форму выше</span>
+  </div>
+
+  <!-- Кнопки управления -->
+  <div class="controls">
+    <button 
+      class="btn btn-control btn-pause" 
+      (click)="onPause()"
+      [disabled]="!canPause()"
+      title="Пауза"
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+        <rect x="6" y="4" width="4" height="16"></rect>
+        <rect x="14" y="4" width="4" height="16"></rect>
+      </svg>
+      <span>Пауза</span>
+    </button>
+    
+    <button 
+      class="btn btn-control btn-resume" 
+      (click)="onResume()"
+      [disabled]="!canResume()"
+      title="Возобновить"
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M8 5v14l11-7z"/>
+      </svg>
+      <span>Возобновить</span>
+    </button>
+    
+    <button 
+      class="btn btn-control btn-skip" 
+      (click)="onSkip()"
+      [disabled]="!canSkip()"
+      title="Пропустить"
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+      </svg>
+      <span>Пропустить</span>
+    </button>
+  </div>
+</div>
+
+<div class="guild-picker-backdrop" *ngIf="guildPickerOpen" (click)="onGuildPickerBackdropClick()">
+  <div class="guild-picker" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
+    <div class="guild-picker-header">
+      <div class="guild-picker-title">Выберите сервер</div>
+      <button
+        *ngIf="!guildPickerMandatory"
+        type="button"
+        class="guild-picker-close"
+        (click)="closeGuildPicker()"
+        aria-label="Закрыть"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <div class="guild-picker-subtitle">
+      {{ guildPickerMandatory ? 'Выберите сервер, чтобы продолжить.' : 'На каком сервере хотите слушать музыку?' }}
+    </div>
+
+    <div class="guild-picker-list" *ngIf="guilds.length > 0">
+      <button
+        type="button"
+        class="guild-picker-item"
+        *ngFor="let g of guilds"
+        [class.active]="g.id === selectedGuildId"
+        (click)="pickGuild(g.id)"
+      >
+        <span class="guild-picker-icon">
+          <img *ngIf="g.iconUrl" [src]="g.iconUrl" [alt]="g.name" class="guild-picker-icon-img" />
+          <span *ngIf="!g.iconUrl" class="guild-picker-icon-fallback">{{ (g.name[0] || 'S') }}</span>
+        </span>
+        <span class="guild-picker-name">{{ g.name }}</span>
+      </button>
+    </div>
+
+    <div class="guild-picker-empty" *ngIf="guilds.length === 0">
+      Нет доступных серверов
+    </div>
+  </div>
+</div>
+
+<app-confirm-modal
+  [open]="warningOpen"
+  [title]="warningTitle"
+  [message]="warningMessage"
+  confirmText="Понятно"
+  cancelText="Закрыть"
+  (confirm)="closeWarning()"
+  (cancel)="closeWarning()"
+></app-confirm-modal>

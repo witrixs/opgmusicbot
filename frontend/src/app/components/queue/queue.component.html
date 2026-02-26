@@ -1,0 +1,140 @@
+<div class="queue-container">
+  <app-confirm-modal
+    [open]="warningOpen"
+    [title]="warningTitle"
+    [message]="warningMessage"
+    confirmText="Понятно"
+    cancelText="Закрыть"
+    (cancel)="closeWarning()"
+    (confirm)="closeWarning()"
+  ></app-confirm-modal>
+
+  <app-confirm-modal
+    [open]="deleteModalOpen"
+    title="Удалить трек из очереди?"
+    [message]="deleteTarget ? (deleteTarget.title + (deleteTarget.author ? ' — ' + deleteTarget.author : '')) : ''"
+    confirmText="Удалить"
+    cancelText="Отмена"
+    [danger]="true"
+    [loading]="deleteModalLoading"
+    (cancel)="closeDeleteModal()"
+    (confirm)="confirmDelete()"
+  ></app-confirm-modal>
+
+  <div class="queue-header">
+    <div class="queue-info" *ngIf="queue && !isLoading">
+      <span class="queue-count">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 18V5l12-2v13"></path>
+          <circle cx="6" cy="18" r="3"></circle>
+          <circle cx="18" cy="16" r="3"></circle>
+        </svg>
+        {{ queue.tracks.length }} {{ queue.tracks.length === 1 ? 'трек' : queue.tracks.length < 5 ? 'трека' : 'треков' }}
+      </span>
+    </div>
+  </div>
+
+  <!-- Skeleton Loaders -->
+  <div class="queue-list-skeleton" *ngIf="isLoading">
+    <div class="queue-item-skeleton" *ngFor="let item of [1,2,3,4]">
+      <div class="skeleton-left">
+        <app-skeleton variant="rounded" width="40px" height="40px"></app-skeleton>
+      </div>
+
+      <div class="skeleton-content">
+        <app-skeleton variant="text" [lines]="1" width="70%"></app-skeleton>
+        <div class="skeleton-meta">
+          <app-skeleton variant="text" [lines]="1" width="45%"></app-skeleton>
+          <app-skeleton variant="rounded" width="70px" height="16px"></app-skeleton>
+        </div>
+      </div>
+
+      <div class="skeleton-actions">
+        <app-skeleton variant="rounded" width="92px" height="24px"></app-skeleton>
+        <app-skeleton variant="rounded" width="32px" height="32px"></app-skeleton>
+      </div>
+    </div>
+  </div>
+
+  <!-- Queue List -->
+  <div class="queue-list" *ngIf="!isLoading && queue && queue.tracks.length > 0">
+    <div 
+      class="queue-item" 
+      *ngFor="let item of displayedTracks; let i = index; trackBy: trackByTrackId"
+      [class.current]="isCurrentTrack(item.originalIndex)"
+      [@slideIn]
+    >
+      <div class="track-number" [class.current]="isCurrentTrack(item.originalIndex)">
+        <span *ngIf="!isCurrentTrack(item.originalIndex)">{{ item.originalIndex + 1 }}</span>
+        <svg *ngIf="isCurrentTrack(item.originalIndex)" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M8 5v14l11-7z"/>
+        </svg>
+      </div>
+      
+      <div class="track-details">
+        <div class="track-title">{{ item.track.title }}</div>
+        <div class="track-meta">
+          <span class="track-author">{{ item.track.author }}</span>
+          <span class="track-duration" *ngIf="item.track.duration">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            {{ formatDuration(item.track.duration) }}
+          </span>
+        </div>
+      </div>
+
+      <div class="track-badge" *ngIf="isCurrentTrack(item.originalIndex)">
+        <span class="badge-dot"></span>
+        Сейчас играет
+      </div>
+
+      <button 
+        class="btn-remove" 
+        (click)="removeTrack(item.track.id)"
+        [disabled]="isLoading"
+        title="Удалить из очереди"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="empty-queue" *ngIf="!isLoading && (!queue || queue.tracks.length === 0)">
+    <div class="empty-icon">
+      <svg width="80" height="80" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <!-- мягкий фон -->
+        <circle cx="32" cy="32" r="26" fill="currentColor" opacity="0.06"></circle>
+
+        <!-- пульсирующие кольца -->
+        <circle class="halo halo-1" cx="32" cy="32" r="23" stroke="currentColor" stroke-width="2" opacity="0.22"></circle>
+        <circle class="halo halo-2" cx="32" cy="32" r="18" stroke="currentColor" stroke-width="2" opacity="0.14"></circle>
+
+        <!-- иконка очереди (список) -->
+        <g class="queue-mark" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <circle class="bullet" cx="20" cy="26" r="1.5" fill="currentColor" opacity="0.22"></circle>
+          <circle class="bullet" cx="20" cy="32" r="1.5" fill="currentColor" opacity="0.22"></circle>
+          <circle class="bullet" cx="20" cy="38" r="1.5" fill="currentColor" opacity="0.22"></circle>
+
+          <path class="line l1" d="M26 26H46"></path>
+          <path class="line l2" d="M26 32H46"></path>
+          <path class="line l3" d="M26 38H40"></path>
+        </g>
+
+        <!-- частицы -->
+        <g class="particles" fill="currentColor" opacity="0.55">
+          <circle class="particle p1" cx="18" cy="22" r="1.6"></circle>
+          <circle class="particle p2" cx="47" cy="20" r="1.2"></circle>
+          <circle class="particle p3" cx="50" cy="46" r="1.5"></circle>
+          <circle class="particle p4" cx="19" cy="47" r="1.1"></circle>
+        </g>
+      </svg>
+    </div>
+    <p>Очередь пуста</p>
+    <span class="hint">Добавьте треки через форму выше</span>
+  </div>
+</div>
