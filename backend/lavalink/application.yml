@@ -1,0 +1,23 @@
+server:
+  port: 2333
+  address: 0.0.0.0
+
+lavalink:
+  server:
+    password: "" # Пароль
+    sources:
+      youtube: false  # Отключаем встроенный источник
+  plugins:
+    - dependency: "dev.lavalink.youtube:youtube-plugin:1.16.0"
+      repository: "https://maven.lavalink.dev/releases"
+
+plugins:
+  youtube:
+    enabled: true
+    allowSearch: true
+    allowDirectVideoIds: true
+    allowDirectPlaylistIds: true
+    oauth:
+      enabled: true
+      refreshToken: "" # Токен YouTube
+      skipInitialization: true
