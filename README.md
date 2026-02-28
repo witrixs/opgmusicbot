@@ -47,6 +47,55 @@
 
 ---
 
+# 🚀 Руководство по установке
+
+> **Быстрый старт** - Запустите PasarGuard за несколько минут
+
+### Для быстрой настройки используйте следующие команды в зависимости от предпочитаемой базы данных.
+
+---
+
+**SQLite:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/witrixs/script/main/witrixdriscordbot/scripts/witrix.sh -o /tmp/witrixdiscordbot.sh \
+  && sed -i 's/\r$//' /tmp/witrixdiscordbot.sh \
+  && sudo bash /tmp/witrixdiscordbot.sh install \
+  && sudo bash /tmp/witrixdiscordbot.sh install-script
+```
+
+### 📋 После установки:
+
+<div align="left">
+
+**⚠️ Настройте `.env` командой `witrixdiscordbot edit-env` и далее `witrixdiscordbot up`**
+
+**📋 Следите за логами** (нажмите `Ctrl+C` для остановки)
+
+**📁 Файлы находятся в** `/opt/witrixdiscordbot`
+
+**⚙️ Файл конфигурации:** `/opt/witrixdiscordbot/.env` (см. [Конфигурация](#-конфигурация) для деталей)
+
+**💾 Файлы данных:** `/var/lib/witrixdiscordbot`
+
+**🔒 Важно:** Панель управления требует SSL-сертификат для безопасности
+- Получить SSL-сертификат: можно установив любой из веб серверов (смотри  ниже как это делать)
+
+**🔗 Для тестирования без домена:** Используйте SSH port forwarding (см. ниже)
+
+</div>
+
+---
+
+```bash
+ssh -L 4000:localhost:4000 user@serverip
+```
+
+Затем доступ: `http://localhost:4000/dashboard/`
+
+> ⚠️ **Только для тестирования** - Вы потеряете доступ при закрытии SSH-терминала.
+
+---
+
 ## 🚀 Установка и запуск
 
 ### 1. Клонирование репозитория
