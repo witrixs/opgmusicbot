@@ -1,0 +1,9 @@
+services:
+  bot:
+    image: witrixs/opgmusicbot:latest
+    container_name: opgmusic
+    restart: always
+    env_file: .env
+    network_mode: host
+    volumes:
+      - /etc/localtime:/etc/localtime:ro

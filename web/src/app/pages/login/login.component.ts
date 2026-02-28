@@ -2,6 +2,7 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Title } from '@angular/platform-browser';
 import { AuthService } from '../../auth/auth.service';
+import { API_BASE_URL } from '../../config/api.config';
 
 @Component({
   selector: 'app-login',
@@ -11,8 +12,7 @@ import { AuthService } from '../../auth/auth.service';
 export class LoginComponent implements OnInit, OnDestroy {
   error: string | null = null;
 
-  private readonly apiBaseUrl =
-    (window.__env?.API_BASE_URL || 'http://localhost:3000/api').replace(/\/$/, '');
+  private readonly apiBaseUrl = API_BASE_URL.replace(/\/$/, '') || '/api';
 
   private manifestLink: HTMLLinkElement | null = null;
   private appleMetaTags: HTMLMetaElement[] = [];
