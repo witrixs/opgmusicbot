@@ -1,0 +1,22 @@
+# Не копировать в образ
+node_modules
+*/node_modules
+dist
+*/dist
+.git
+.gitignore
+*.md
+.env
+.env.*
+!.env.example
+*.log
+.idea
+.vscode
+coverage
+.nyc_output
+terminals
+agent-transcripts
+*.txt
+!web/scripts/*.js
+!lavalink/application.yml
+.lavalink/

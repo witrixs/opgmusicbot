@@ -4,6 +4,7 @@ import { BehaviorSubject, Observable, catchError, combineLatest, distinctUntilCh
 import { Queue } from '../models/queue.model';
 import { PlayerState, Track } from '../models/track.model';
 import { AuthService } from '../auth/auth.service';
+import { API_BASE_URL } from '../config/api.config';
 
 /**
  * Сервис для работы с музыкальным API (NestJS)
@@ -48,8 +49,7 @@ export class MusicService {
     map(([guilds, selectedId]) => guilds.find((g) => g.id === selectedId) ?? null),
   );
 
-  private readonly apiBaseUrl =
-    (window.__env?.API_BASE_URL || 'http://localhost:3000/api').replace(/\/$/, '');
+  private readonly apiBaseUrl = API_BASE_URL.replace(/\/$/, '') || '/api';
 
   private lastQueueKey: string | null = null;
   private lastPlayerKey: string | null = null;
