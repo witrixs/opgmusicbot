@@ -51,7 +51,7 @@
 На сервере приложение ставится одной цепочкой (скрипт скачивает Docker Compose и создаёт `.env` в `/opt/opgbot`, ставит команду `opgbot`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/witrixs/script/main/opgmusicbot/scripts/script.sh -o /tmp/opgbot.sh \
+curl -fsSL https://raw.githubusercontent.com/witrixs/opgmusicbot/main/scripts/script.sh -o /tmp/opgbot.sh \
   && sed -i 's/\r$//' /tmp/opgbot.sh \
   && sudo bash /tmp/opgbot.sh install \
   && sudo bash /tmp/opgbot.sh install-script
