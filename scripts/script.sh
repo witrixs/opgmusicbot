@@ -13,7 +13,7 @@ COMPOSE_FILE="$APP_DIR/docker-compose.yml"
 ENV_FILE="$APP_DIR/.env"
 
 # URL репозитория со скриптом и compose (ветка main)
-REPO_RAW_URL="${REPO_RAW_URL:-https://raw.githubusercontent.com/witrixs/script/main/opgmusicbot}"
+REPO_RAW_URL="${REPO_RAW_URL:-https://raw.githubusercontent.com/witrixs/opgmusicbot/main}"
 
 colorized_echo() {
   local color=$1
