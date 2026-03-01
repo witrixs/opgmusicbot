@@ -32,9 +32,10 @@ RUN npm prune --omit=dev
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/web/dist ./web/dist
 
-# Проверка: без dist/main.js контейнер падает с MODULE_NOT_FOUND
-RUN test -f dist/main.js || (echo "ERROR: dist/main.js not found. Rebuild with: docker compose build --no-cache" && exit 1)
+# NestJS может собрать в dist/main.js или dist/src/main.js
+RUN test -f dist/main.js || test -f dist/src/main.js || (echo "ERROR: main.js not found. dist contents:" && ls -laR dist && exit 1)
 
 EXPOSE 3000
 
-CMD ["node", "dist/main.js"]
+# NestJS собирает в dist/src/main.js
+CMD ["node", "dist/src/main.js"]
