@@ -5,6 +5,8 @@ export type JwtPayload = {
   discordId: string;
   username: string;
   avatar: string | null;
+  /** true, если пользователь админ хотя бы на одном сервере, где есть бот */
+  isAdmin?: boolean;
 };
 
 /**

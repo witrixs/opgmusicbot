@@ -32,6 +32,8 @@ type ApiMusicState = {
   guildId: string | null;
   playerState: ApiPlayerState;
   queue: ApiQueue;
+  repeatMode: 'off' | 'one';
+  shuffleMode: boolean;
   lastError?: { at: number; error: string; message?: string; cause?: string; severity?: string } | null;
 };
 
@@ -126,7 +128,17 @@ export class MusicApiController {
 
     const heartbeat$ = interval(15000);
 
-    const sub = merge(updates$, heartbeat$).subscribe(() => send());
+    // Раз в секунду шлём state с актуальной позицией, пока в гильдии играет трек — ползунок обновляется плавно по SSE
+    const positionTick$ = interval(1000).pipe(
+      filter(() => {
+        if (!scopedGuildId) return false;
+        const player = this.playerManager.getPlayer(scopedGuildId);
+        const isPaused = this.musicService.getPausedState(scopedGuildId);
+        return !!player?.track && isPaused !== null;
+      }),
+    );
+
+    const sub = merge(updates$, heartbeat$, positionTick$).subscribe(() => send());
 
     req.on('close', () => {
       sub.unsubscribe();
@@ -205,6 +217,56 @@ export class MusicApiController {
     return this.buildState(guildId);
   }
 
+  @Post('previous')
+  async previous(@Req() req: any, @Body() body: { guildId?: string }): Promise<ApiMusicState> {
+    const guildId = this.requireGuildId(body.guildId);
+    const existingPlayer = this.playerManager.getPlayer(guildId);
+    const botChannelId =
+      existingPlayer?.connection?.state === 1 ? (existingPlayer?.connection?.channelId ?? null) : null;
+    await this.assertUserCanControl(req, guildId, botChannelId);
+    await this.musicService.previous(guildId);
+    return this.buildState(guildId);
+  }
+
+  @Post('seek')
+  async seek(
+    @Req() req: any,
+    @Body() body: { guildId?: string; position: number },
+  ): Promise<ApiMusicState> {
+    const guildId = this.requireGuildId(body.guildId);
+    const position = Number(body.position);
+    if (!Number.isFinite(position) || position < 0) {
+      throw new BadRequestException('position must be a non-negative number (seconds)');
+    }
+    const existingPlayer = this.playerManager.getPlayer(guildId);
+    const botChannelId =
+      existingPlayer?.connection?.state === 1 ? (existingPlayer?.connection?.channelId ?? null) : null;
+    await this.assertUserCanControl(req, guildId, botChannelId);
+    this.musicService.seek(guildId, position);
+    return this.buildState(guildId);
+  }
+
+  @Post('repeat')
+  async setRepeat(
+    @Req() req: any,
+    @Body() body: { guildId?: string; mode?: 'off' | 'one' },
+  ): Promise<ApiMusicState> {
+    const guildId = this.requireGuildId(body.guildId);
+    const mode = body.mode === 'one' ? 'one' : 'off';
+    this.musicService.setRepeatMode(guildId, mode);
+    return this.buildState(guildId);
+  }
+
+  @Post('shuffle')
+  async setShuffle(
+    @Req() req: any,
+    @Body() body: { guildId?: string; shuffle?: boolean },
+  ): Promise<ApiMusicState> {
+    const guildId = this.requireGuildId(body.guildId);
+    this.musicService.setShuffleMode(guildId, Boolean(body.shuffle));
+    return this.buildState(guildId);
+  }
+
   @Post('stop')
   async stop(@Req() req: any, @Body() body: { guildId?: string }): Promise<ApiMusicState> {
     const guildId = this.requireGuildId(body.guildId);
@@ -240,6 +302,50 @@ export class MusicApiController {
     return this.buildState(guildId);
   }
 
+  @Post('queue/play-index')
+  async playQueueIndex(
+    @Req() req: any,
+    @Body() body: { guildId?: string; index?: number },
+  ): Promise<ApiMusicState> {
+    const guildId = this.requireGuildId(body.guildId);
+    const existingPlayer = this.playerManager.getPlayer(guildId);
+    const botChannelId =
+      existingPlayer?.connection?.state === 1 ? (existingPlayer?.connection?.channelId ?? null) : null;
+    await this.assertUserCanControl(req, guildId, botChannelId);
+    const index = typeof body.index === 'number' ? body.index : -1;
+    const queue = this.playerManager.getQueue(guildId);
+    const len = queue.getAll().length;
+    if (index < 0 || index >= len) {
+      throw new BadRequestException('index must be a valid queue index');
+    }
+    await this.playerManager.playAtIndex(guildId, index);
+    this.events.emit(guildId, 'queue_changed');
+    return this.buildState(guildId);
+  }
+
+  @Post('queue/reorder')
+  async reorderQueue(
+    @Req() req: any,
+    @Body() body: { guildId?: string; fromIndex?: number; toIndex?: number },
+  ): Promise<ApiMusicState> {
+    const guildId = this.requireGuildId(body.guildId);
+    const existingPlayer = this.playerManager.getPlayer(guildId);
+    const botChannelId =
+      existingPlayer?.connection?.state === 1 ? (existingPlayer?.connection?.channelId ?? null) : null;
+    await this.assertUserCanControl(req, guildId, botChannelId);
+
+    const fromIndex = typeof body.fromIndex === 'number' ? body.fromIndex : -1;
+    const toIndex = typeof body.toIndex === 'number' ? body.toIndex : -1;
+    const queue = this.playerManager.getQueue(guildId);
+    const len = queue.getAll().length;
+    if (fromIndex < 0 || fromIndex >= len || toIndex < 0 || toIndex >= len) {
+      throw new BadRequestException('fromIndex and toIndex must be valid queue indices');
+    }
+    queue.move(fromIndex, toIndex);
+    this.events.emit(guildId, 'queue_changed');
+    return this.buildState(guildId);
+  }
+
   private requireGuildId(explicit?: string): string {
     const guildId = this.resolveGuildId(explicit);
     if (!guildId) {
@@ -265,6 +371,8 @@ export class MusicApiController {
       guildId: null,
       playerState: { currentTrack: null, isPlaying: false, isPaused: false },
       queue: { tracks: [], currentIndex: -1 },
+      repeatMode: 'off',
+      shuffleMode: false,
       lastError: null,
     };
   }
@@ -284,6 +392,12 @@ export class MusicApiController {
     const currentIndex = isPlaying || isPaused ? rawIndex : -1;
     const currentTrack = currentIndex >= 0 && currentIndex < tracks.length ? tracks[currentIndex] : null;
 
+    // Позиция воспроизведения в секундах (Lavalink — position в ms)
+    const positionSeconds =
+      player?.track && typeof player.position === 'number'
+        ? Math.floor(player.position / 1000)
+        : undefined;
+
     return {
       botConnected: Boolean(player?.connection?.channelId) && player.connection.state === 1,
       guildId,
@@ -291,11 +405,14 @@ export class MusicApiController {
         currentTrack,
         isPlaying,
         isPaused,
+        position: positionSeconds,
       },
       queue: {
         tracks,
         currentIndex,
       },
+      repeatMode: this.playerManager.getRepeatMode(guildId),
+      shuffleMode: this.playerManager.getShuffleMode(guildId),
       lastError: this.playerManager.getLastPlaybackError(guildId),
     };
   }

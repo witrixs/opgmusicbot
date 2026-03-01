@@ -191,7 +191,6 @@ export class MusicService {
         return '❌ Трек не найден. Попробуйте использовать прямую ссылку на YouTube видео, или обновите Lavalink до версии 4+ для поддержки поиска.';
       }
 
-      const track = result.tracks[0];
       const queue = this.playerManager.getQueue(guildId);
 
       // Проверяем, не подключен ли бот уже к другому каналу на этом сервере
@@ -216,7 +215,7 @@ export class MusicService {
         await this.playerManager.resetGuildSession(guildId, 'switch_channel');
       }
 
-      // Используем правильный метод Node для подключения к голосовому канала
+      // Подключаемся к голосовому каналу при необходимости
       let player = this.playerManager.getPlayer(guildId);
       if (!player || player.connection.channelId !== voiceChannelId || player.connection.state !== 1) {
         this.logger.log(`Joining voice channel ${voiceChannelId} for guild ${guildId}`);
@@ -230,34 +229,58 @@ export class MusicService {
         this.playerManager.setPlayer(guildId, player);
       }
 
-      // Сбрасываем таймер неактивности при добавлении трека
       this.playerManager.resetInactivityTimer(guildId);
 
-      // Добавляем трек в очередь с информацией о запросившем
+      // Плейлист YouTube: добавляем все треки в очередь
+      const isPlaylist = result.loadType === 'PLAYLIST_LOADED';
+      if (isPlaylist) {
+        const queueTracks: QueueTrack[] = result.tracks.map((t) => ({
+          track: t.track,
+          info: t.info,
+          requesterId: userId,
+          requesterName: userName,
+        }));
+        queue.addMany(queueTracks);
+        this.events.emit(guildId, 'queue_changed');
+        const isActive = this.playerManager.isPlaybackActive(guildId);
+        if (!isActive) {
+          await this.playerManager.playNext(guildId);
+        }
+        const playlistName = (result as { playlistInfo?: { name?: string } }).playlistInfo?.name || 'Плейлист';
+        return `▶️ В очередь добавлен плейлист **${playlistName}** (${result.tracks.length} треков)${!isActive ? ', воспроизведение начато' : ''}.`;
+      }
+
+      // Один трек
+      const track = result.tracks[0];
       const queueTrack: QueueTrack = {
         track: track.track,
         info: track.info,
         requesterId: userId,
         requesterName: userName,
       };
-
       queue.add(queueTrack);
-      // ВАЖНО: если трек добавили в очередь во время воспроизведения, PlayerManager events не сработают.
-      // Поэтому явно пушим обновление для UI.
       this.events.emit(guildId, 'queue_changed');
 
-      // Если плеер не воспроизводит ничего, начинаем воспроизведение
       const isActive = this.playerManager.isPlaybackActive(guildId);
       if (!isActive) {
         await this.playerManager.playNext(guildId);
         return `▶️ Воспроизведение: **${track.info.title}**`;
-      } else {
-        return `➕ Добавлено в очередь: **${track.info.title}**`;
       }
+      return `➕ Добавлено в очередь: **${track.info.title}**`;
     } catch (error) {
       this.logger.error(`Error in play: ${error.message}`);
       return `❌ Ошибка при воспроизведении: ${error.message}`;
     }
+  }
+
+  /**
+   * Перемотка текущего трека на позицию (в секундах)
+   * @param guildId - ID гильдии
+   * @param positionSeconds - позиция в секундах
+   */
+  seek(guildId: string, positionSeconds: number): void {
+    const positionMs = Math.round(positionSeconds * 1000);
+    this.playerManager.seek(guildId, positionMs);
   }
 
   /**
@@ -347,12 +370,12 @@ export class MusicService {
     }
 
     const queue = this.playerManager.getQueue(guildId);
-    
-    // Останавливаем текущее воспроизведение
+
+    // Флаг: не реагировать на 'end' от stopTrack(), иначе playNext вызовется дважды
+    this.playerManager.setManualChangeInProgress(guildId, true);
     await player.stopTrack();
     this.events.emit(guildId, 'track_skip');
-    
-    // playNext() сам вызовет queue.next() и начнет воспроизведение следующего трека
+
     await this.playerManager.playNext(guildId);
     
     const nextTrackInfo = queue.current();
@@ -361,6 +384,56 @@ export class MusicService {
     }
     
     return `⏭️ Пропущено. Воспроизведение: **${nextTrackInfo.info.title}**`;
+  }
+
+  /**
+   * Вернуться к предыдущему треку в очереди.
+   * Если уже на первом треке — перезапуск текущего с начала (как в Spotify).
+   * @param {string} guildId - ID гильдии Discord
+   * @returns {Promise<string>} Сообщение о результате операции
+   */
+  async previous(guildId: string): Promise<string> {
+    const player = this.playerManager.getPlayer(guildId);
+    const queue = this.playerManager.getQueue(guildId);
+    if (!player || !queue) {
+      return '❌ Нет активного воспроизведения';
+    }
+    const currentIndex = queue.getCurrentIndex();
+    if (currentIndex <= 0) {
+      // На первом треке — перезапуск текущего с начала
+      await this.playerManager.replayCurrent(guildId);
+      const currentTrackInfo = queue.current();
+      return currentTrackInfo
+        ? `⏮️ С начала: **${currentTrackInfo.info.title}**`
+        : '⏮️ С начала';
+    }
+    await this.playerManager.playPrevious(guildId);
+    const prevTrackInfo = queue.current();
+    return prevTrackInfo
+      ? `⏮️ Предыдущий трек: **${prevTrackInfo.info.title}**`
+      : '⏮️ Предыдущий трек';
+  }
+
+  /**
+   * Установить режим повтора: 'off' или 'one'
+   */
+  setRepeatMode(guildId: string, mode: 'off' | 'one'): void {
+    this.playerManager.setRepeatMode(guildId, mode);
+  }
+
+  /**
+   * Получить режим повтора для гильдии
+   */
+  getRepeatMode(guildId: string): 'off' | 'one' {
+    return this.playerManager.getRepeatMode(guildId);
+  }
+
+  setShuffleMode(guildId: string, enabled: boolean): void {
+    this.playerManager.setShuffleMode(guildId, enabled);
+  }
+
+  getShuffleMode(guildId: string): boolean {
+    return this.playerManager.getShuffleMode(guildId);
   }
 
   /**

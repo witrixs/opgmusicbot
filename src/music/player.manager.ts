@@ -22,8 +22,55 @@ export class PlayerManager {
     { at: number; error: string; message?: string; cause?: string; severity?: string }
   > = new Map();
   private playbackActive: Map<string, boolean> = new Map();
+  /** Режим повтора: 'off' — следующий трек, 'one' — повтор текущего */
+  private repeatMode: Map<string, 'off' | 'one'> = new Map();
+  /** Режим перемешивания: треки в случайном порядке */
+  private shuffleMode: Map<string, boolean> = new Map();
+  /** При ручной смене трека (skip/previous) не реагировать на 'end', чтобы не вызывать playNext дважды */
+  private manualChangeInProgress: Set<string> = new Set();
 
   constructor(private readonly events: MusicEventsService) {}
+
+  /** Вызвать перед stopTrack() при skip/previous — тогда 'end' не вызовет playNext */
+  setManualChangeInProgress(guildId: string, value: boolean): void {
+    if (value) this.manualChangeInProgress.add(guildId);
+    else this.manualChangeInProgress.delete(guildId);
+  }
+
+  setRepeatMode(guildId: string, mode: 'off' | 'one'): void {
+    this.repeatMode.set(guildId, mode);
+  }
+
+  getRepeatMode(guildId: string): 'off' | 'one' {
+    return this.repeatMode.get(guildId) ?? 'off';
+  }
+
+  setShuffleMode(guildId: string, enabled: boolean): void {
+    this.shuffleMode.set(guildId, enabled);
+  }
+
+  getShuffleMode(guildId: string): boolean {
+    return this.shuffleMode.get(guildId) ?? false;
+  }
+
+  /**
+   * Перемотка текущего трека (только для треков с isSeekable)
+   * @param guildId - ID гильдии
+   * @param positionMs - позиция в миллисекундах
+   */
+  seek(guildId: string, positionMs: number): void {
+    const player = this.players.get(guildId);
+    const queue = this.queues.get(guildId);
+    if (!player || !player.track || !queue) return;
+
+    const current = queue.current();
+    if (!current?.info?.isSeekable || typeof current.info.length !== 'number') return;
+
+    const lengthMs = current.info.length;
+    const clamped = Math.max(0, Math.min(positionMs, lengthMs));
+    player.seekTo(clamped);
+    this.events.emit(guildId, 'player_update');
+  }
 
   /**
    * Полностью очистить музыкальную сессию гильдии (плеер/очередь/ошибки/таймеры).
@@ -63,6 +110,9 @@ export class PlayerManager {
 
     this.players.delete(guildId);
     this.queues.delete(guildId);
+    this.repeatMode.delete(guildId);
+    this.shuffleMode.delete(guildId);
+    this.manualChangeInProgress.delete(guildId);
 
     // Вызываем callback для удаления сообщения с плеером (если установлен)
     if (this.onCleanupCallback) {
@@ -185,10 +235,20 @@ export class PlayerManager {
     });
 
     player.on('end', () => {
+      if (this.manualChangeInProgress.has(guildId)) {
+        this.logger.log(`Track end ignored (manual change) in guild ${guildId}`);
+        return;
+      }
       this.logger.log(`Track ended in guild ${guildId}`);
       this.playbackActive.set(guildId, false);
       this.events.emit(guildId, 'track_end');
-      this.playNext(guildId);
+      if (this.getRepeatMode(guildId) === 'one') {
+        this.replayCurrent(guildId);
+      } else if (this.getShuffleMode(guildId)) {
+        this.playRandom(guildId);
+      } else {
+        this.playNext(guildId);
+      }
     });
 
     player.on('exception', (data) => {
@@ -272,10 +332,20 @@ export class PlayerManager {
     });
 
     player.on('end', () => {
+      if (this.manualChangeInProgress.has(guildId)) {
+        this.logger.log(`Track end ignored (manual change) in guild ${guildId}`);
+        return;
+      }
       this.logger.log(`Track ended in guild ${guildId}`);
       this.playbackActive.set(guildId, false);
       this.events.emit(guildId, 'track_end');
-      this.playNext(guildId);
+      if (this.getRepeatMode(guildId) === 'one') {
+        this.replayCurrent(guildId);
+      } else if (this.getShuffleMode(guildId)) {
+        this.playRandom(guildId);
+      } else {
+        this.playNext(guildId);
+      }
     });
 
     player.on('exception', (data) => {
@@ -420,6 +490,157 @@ export class PlayerManager {
       // Удаляем проблемный трек и пытаемся следующий
       queue.remove(nextIndex);
       this.events.emit(guildId, 'track_play_failed');
+      this.playNext(guildId);
+    }
+  }
+
+  /**
+   * Повторить текущий трек (для режима repeat one)
+   * @param {string} guildId - ID гильдии Discord
+   */
+  async replayCurrent(guildId: string): Promise<void> {
+    const player = this.players.get(guildId);
+    const queue = this.queues.get(guildId);
+    if (!player || !queue) return;
+    const currentIndex = queue.getCurrentIndex();
+    const all = queue.getAll();
+    const currentTrack = currentIndex >= 0 && currentIndex < all.length ? all[currentIndex] : null;
+    if (!currentTrack) {
+      this.playNext(guildId);
+      return;
+    }
+    this.resetInactivityTimer(guildId);
+    this.manualChangeInProgress.add(guildId);
+    try {
+      if (player.track) await player.stopTrack();
+      await player.playTrack({ track: currentTrack.track });
+      this.lastPlaybackError.delete(guildId);
+      this.logger.log(`Replaying track: ${currentTrack.info.title} in guild ${guildId}`);
+      this.events.emit(guildId, 'track_play');
+    } catch (error) {
+      this.manualChangeInProgress.delete(guildId);
+      this.logger.error(`Error replaying track in guild ${guildId}: ${(error as Error).message}`);
+      this.playNext(guildId);
+    }
+  }
+
+  /**
+   * Воспроизвести предыдущий трек в очереди
+   * @param {string} guildId - ID гильдии Discord
+   */
+  async playPrevious(guildId: string): Promise<void> {
+    const player = this.players.get(guildId);
+    const queue = this.queues.get(guildId);
+
+    if (!player || !queue) {
+      this.logger.warn(`No player or queue for guild ${guildId}`);
+      return;
+    }
+
+    const all = queue.getAll();
+    const currentIndex = queue.getCurrentIndex();
+    const prevIndex = currentIndex - 1;
+
+    if (prevIndex < 0 || prevIndex >= all.length) {
+      this.logger.log(`No previous track for guild ${guildId}`);
+      return;
+    }
+
+    const prevTrack = all[prevIndex];
+    this.resetInactivityTimer(guildId);
+
+    try {
+      this.manualChangeInProgress.add(guildId);
+      if (player.track) {
+        await player.stopTrack();
+      }
+      await player.playTrack({ track: prevTrack.track });
+      queue.setCurrentIndex(prevIndex);
+      this.lastPlaybackError.delete(guildId);
+      this.playbackActive.set(guildId, true);
+      this.logger.log(`Playing previous track: ${prevTrack.info.title} in guild ${guildId}`);
+      this.events.emit(guildId, 'track_play');
+    } catch (error) {
+      this.manualChangeInProgress.delete(guildId);
+      this.logger.error(`Error playing previous track in guild ${guildId}: ${error.message}`);
+      this.lastPlaybackError.set(guildId, {
+        at: Date.now(),
+        error: 'playPrevious failed',
+        message: (error as Error).message,
+      });
+      this.playNext(guildId);
+    }
+  }
+
+  /**
+   * Воспроизвести трек в очереди по индексу (переход к выбранному треку)
+   */
+  async playAtIndex(guildId: string, index: number): Promise<void> {
+    const player = this.players.get(guildId);
+    const queue = this.queues.get(guildId);
+    if (!player || !queue) return;
+    const all = queue.getAll();
+    if (index < 0 || index >= all.length) return;
+    const track = all[index];
+    this.resetInactivityTimer(guildId);
+    try {
+      this.setManualChangeInProgress(guildId, true);
+      if (player.track) await player.stopTrack();
+      await player.playTrack({ track: track.track });
+      queue.setCurrentIndex(index);
+      this.lastPlaybackError.delete(guildId);
+      this.playbackActive.set(guildId, true);
+      this.logger.log(`Playing track at index ${index}: ${track.info.title} in guild ${guildId}`);
+      this.events.emit(guildId, 'track_play');
+    } catch (error) {
+      this.logger.error(`Error playing track at index in guild ${guildId}: ${(error as Error).message}`);
+      this.lastPlaybackError.set(guildId, {
+        at: Date.now(),
+        error: 'playAtIndex failed',
+        message: (error as Error).message,
+      });
+      this.playNext(guildId);
+    } finally {
+      // Сбрасываем флаг с задержкой: событие 'end' от stopTrack() может прийти асинхронно,
+      // и тогда playNext() запустит следующий трек вместо выбранного
+      setTimeout(() => this.setManualChangeInProgress(guildId, false), 400);
+    }
+  }
+
+  /**
+   * Воспроизвести случайный трек из очереди (режим shuffle)
+   */
+  async playRandom(guildId: string): Promise<void> {
+    const player = this.players.get(guildId);
+    const queue = this.queues.get(guildId);
+    if (!player || !queue) return;
+    const all = queue.getAll();
+    if (all.length === 0) {
+      this.playbackActive.set(guildId, false);
+      this.events.emit(guildId, 'queue_empty');
+      this.startInactivityTimer(guildId);
+      if (this.onQueueEmptyCallback) {
+        try { await this.onQueueEmptyCallback(guildId); } catch (e) { this.logger.error(String(e)); }
+      }
+      return;
+    }
+    if (player.connection.state !== 1) {
+      this.playNext(guildId);
+      return;
+    }
+    const randomIndex = Math.floor(Math.random() * all.length);
+    const track = all[randomIndex];
+    this.resetInactivityTimer(guildId);
+    try {
+      await player.playTrack({ track: track.track });
+      queue.setCurrentIndex(randomIndex);
+      this.lastPlaybackError.delete(guildId);
+      this.playbackActive.set(guildId, true);
+      this.logger.log(`Playing random track: ${track.info.title} in guild ${guildId}`);
+      this.events.emit(guildId, 'track_play');
+    } catch (error) {
+      this.logger.error(`Error playing random track in guild ${guildId}: ${(error as Error).message}`);
+      this.lastPlaybackError.set(guildId, { at: Date.now(), error: 'playRandom failed', message: (error as Error).message });
       this.playNext(guildId);
     }
   }

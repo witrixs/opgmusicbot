@@ -153,4 +153,25 @@ export class Queue {
     }
     return true;
   }
+
+  /**
+   * Переместить трек с позиции fromIndex на позицию toIndex.
+   * Обновляет currentIndex, если перемещали текущий трек.
+   */
+  move(fromIndex: number, toIndex: number): boolean {
+    if (fromIndex < 0 || fromIndex >= this.tracks.length) return false;
+    if (toIndex < 0 || toIndex >= this.tracks.length) return false;
+    if (fromIndex === toIndex) return true;
+
+    const currentId = this.currentIndex >= 0 ? this.tracks[this.currentIndex]?.info?.identifier : null;
+    const [item] = this.tracks.splice(fromIndex, 1);
+    const insertIndex = fromIndex < toIndex ? toIndex - 1 : toIndex;
+    this.tracks.splice(insertIndex, 0, item);
+
+    if (currentId != null) {
+      const newCurrentIndex = this.tracks.findIndex((t) => t.info?.identifier === currentId);
+      this.currentIndex = newCurrentIndex >= 0 ? newCurrentIndex : this.currentIndex;
+    }
+    return true;
+  }
 }
