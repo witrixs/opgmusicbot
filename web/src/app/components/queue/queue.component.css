@@ -61,6 +61,12 @@
   background: rgba(29, 185, 84, 0.1);
 }
 
+.queue-item.hover-play {
+  background: rgba(29, 185, 84, 0.14);
+  box-shadow: 0 0 0 2px rgba(29, 185, 84, 0.35);
+  border-radius: 4px;
+}
+
 .track-number {
   font-size: 16px;
   font-weight: 400;
@@ -73,6 +79,16 @@
   transition: all var(--transition-base);
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.track-number:hover {
+  color: var(--accent-primary);
+}
+
+.track-number .num-play-icon {
+  color: var(--accent-primary);
 }
 
 .queue-item.current .track-number {

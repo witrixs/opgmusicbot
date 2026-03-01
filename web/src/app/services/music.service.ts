@@ -45,6 +45,14 @@ export class MusicService {
   private selectedGuildIdSubject = new BehaviorSubject<string | null>(null);
   public selectedGuildId$ = this.selectedGuildIdSubject.asObservable();
 
+  // Режим повтора: 'off' | 'one'
+  private repeatModeSubject = new BehaviorSubject<'off' | 'one'>('off');
+  public repeatMode$ = this.repeatModeSubject.asObservable();
+
+  // Режим перемешивания
+  private shuffleModeSubject = new BehaviorSubject<boolean>(false);
+  public shuffleMode$ = this.shuffleModeSubject.asObservable();
+
   public selectedGuild$ = combineLatest([this.guilds$, this.selectedGuildId$]).pipe(
     map(([guilds, selectedId]) => guilds.find((g) => g.id === selectedId) ?? null),
   );
@@ -103,7 +111,16 @@ export class MusicService {
     const playerKey = `${ct}|${remote.playerState?.isPlaying ? 1 : 0}|${remote.playerState?.isPaused ? 1 : 0}`;
     if (playerKey !== this.lastPlayerKey) {
       this.lastPlayerKey = playerKey;
+    }
+    // Всегда обновляем state (в т.ч. position для перемотки)
+    if (remote.playerState) {
       this.playerStateSubject.next(remote.playerState);
+    }
+    if (remote.repeatMode !== undefined) {
+      this.repeatModeSubject.next(remote.repeatMode);
+    }
+    if (remote.shuffleMode !== undefined) {
+      this.shuffleModeSubject.next(remote.shuffleMode);
     }
   }
 
@@ -243,6 +260,85 @@ export class MusicService {
   }
 
   /**
+   * Предыдущий трек
+   */
+  previousTrack(): Observable<void> {
+    const guildId = this.selectedGuildIdSubject.value;
+    return this.http.post<ApiMusicState>(`${this.apiBaseUrl}/music/previous`, { guildId }).pipe(
+      tap((state) => {
+        this.applyRemoteState(state);
+        this.isBackendOnlineSubject.next(true);
+      }),
+      map(() => void 0),
+      catchError((err) => {
+        console.error('Failed to previous track:', err);
+        this.isBackendOnlineSubject.next(false);
+        throw err;
+      }),
+    );
+  }
+
+  /**
+   * Перемотка текущего трека (позиция в секундах)
+   */
+  seek(positionSeconds: number): Observable<void> {
+    const guildId = this.selectedGuildIdSubject.value;
+    return this.http
+      .post<ApiMusicState>(`${this.apiBaseUrl}/music/seek`, { guildId, position: positionSeconds })
+      .pipe(
+        tap((state) => {
+          this.applyRemoteState(state);
+          this.isBackendOnlineSubject.next(true);
+        }),
+        map(() => void 0),
+        catchError((err) => {
+          console.error('Seek failed:', err);
+          this.isBackendOnlineSubject.next(false);
+          throw err;
+        }),
+      );
+  }
+
+  /**
+   * Установить режим повтора: 'off' или 'one'
+   */
+  setRepeatMode(mode: 'off' | 'one'): Observable<void> {
+    const guildId = this.selectedGuildIdSubject.value;
+    return this.http
+      .post<ApiMusicState>(`${this.apiBaseUrl}/music/repeat`, { guildId, mode })
+      .pipe(
+        tap((state) => {
+          this.applyRemoteState(state);
+          this.isBackendOnlineSubject.next(true);
+        }),
+        map(() => void 0),
+        catchError((err) => {
+          console.error('Failed to set repeat mode:', err);
+          this.isBackendOnlineSubject.next(false);
+          throw err;
+        }),
+      );
+  }
+
+  setShuffleMode(shuffle: boolean): Observable<void> {
+    const guildId = this.selectedGuildIdSubject.value;
+    return this.http
+      .post<ApiMusicState>(`${this.apiBaseUrl}/music/shuffle`, { guildId, shuffle })
+      .pipe(
+        tap((state) => {
+          this.applyRemoteState(state);
+          this.isBackendOnlineSubject.next(true);
+        }),
+        map(() => void 0),
+        catchError((err) => {
+          console.error('Failed to set shuffle mode:', err);
+          this.isBackendOnlineSubject.next(false);
+          throw err;
+        }),
+      );
+  }
+
+  /**
    * Получение текущей очереди
    */
   getQueue(): Observable<Queue> {
@@ -266,6 +362,48 @@ export class MusicService {
         map(() => void 0),
         catchError((err) => {
           console.error('Failed to remove track from queue:', err);
+          this.isBackendOnlineSubject.next(false);
+          throw err;
+        }),
+      );
+  }
+
+  /**
+   * Воспроизвести трек в очереди по индексу
+   */
+  playQueueIndex(index: number): Observable<void> {
+    const guildId = this.selectedGuildIdSubject.value;
+    return this.http
+      .post<ApiMusicState>(`${this.apiBaseUrl}/music/queue/play-index`, { guildId, index })
+      .pipe(
+        tap((state) => {
+          this.applyRemoteState(state);
+          this.isBackendOnlineSubject.next(true);
+        }),
+        map(() => void 0),
+        catchError((err) => {
+          console.error('Failed to play queue index:', err);
+          this.isBackendOnlineSubject.next(false);
+          throw err;
+        }),
+      );
+  }
+
+  /**
+   * Переместить трек в очереди с позиции fromIndex на toIndex
+   */
+  reorderQueue(fromIndex: number, toIndex: number): Observable<void> {
+    const guildId = this.selectedGuildIdSubject.value;
+    return this.http
+      .post<ApiMusicState>(`${this.apiBaseUrl}/music/queue/reorder`, { guildId, fromIndex, toIndex })
+      .pipe(
+        tap((state) => {
+          this.applyRemoteState(state);
+          this.isBackendOnlineSubject.next(true);
+        }),
+        map(() => void 0),
+        catchError((err) => {
+          console.error('Failed to reorder queue:', err);
           this.isBackendOnlineSubject.next(false);
           throw err;
         }),
@@ -387,6 +525,8 @@ type ApiMusicState = {
   guildId: string | null;
   playerState: PlayerState;
   queue: Queue;
+  repeatMode?: 'off' | 'one';
+  shuffleMode?: boolean;
 };
 
 export type ApiGuild = {

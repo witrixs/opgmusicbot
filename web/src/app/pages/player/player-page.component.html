@@ -1,0 +1,158 @@
+<div class="app-container">
+  <div class="mobile-overlay" [class.active]="sidebarOpen" (click)="closeSidebar()"></div>
+  <app-sidebar [isOpen]="sidebarOpen" (closeSidebar)="closeSidebar()"></app-sidebar>
+
+  <div class="main-content">
+    <header class="content-header">
+      <div class="header-left">
+        <button class="mobile-menu-btn" (click)="toggleSidebar()" aria-label="Меню">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+        <div class="header-title">
+          <h1>Сейчас играет</h1>
+          <p class="header-subtitle">Плеер</p>
+        </div>
+      </div>
+      <div class="header-right" (click)="$event.stopPropagation()">
+        <div class="guild-switcher">
+          <button type="button" class="guild-btn" (click)="toggleGuildMenu()">
+            <div class="guild-icon">
+              <img *ngIf="(selectedGuild$ | async)?.iconUrl" [src]="(selectedGuild$ | async)?.iconUrl!" [alt]="(selectedGuild$ | async)?.name || 'Server'" class="guild-icon-img" />
+              <div *ngIf="!(selectedGuild$ | async)?.iconUrl" class="guild-icon-fallback">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="14" width="7" height="7"></rect>
+                  <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+              </div>
+            </div>
+            <div class="guild-meta">
+              <div class="guild-name">{{ (selectedGuild$ | async)?.name || 'Выберите сервер' }}</div>
+              <div class="guild-subtitle">Сервер</div>
+            </div>
+            <span class="guild-caret" [class.open]="guildMenuOpen" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </span>
+          </button>
+          <div class="guild-menu" [class.open]="guildMenuOpen">
+            <button type="button" class="guild-menu-item" *ngFor="let g of (guilds$ | async)" [class.active]="g.id === (selectedGuildId$ | async)" (click)="selectGuild(g.id)">
+              <span class="guild-menu-icon">
+                <img *ngIf="g.iconUrl" [src]="g.iconUrl" [alt]="g.name" class="guild-menu-icon-img" />
+                <span *ngIf="!g.iconUrl" class="guild-menu-icon-fallback">{{ (g.name[0] || 'S') }}</span>
+              </span>
+              <span class="guild-menu-name">{{ g.name }}</span>
+            </button>
+            <div class="guild-menu-empty" *ngIf="(guilds$ | async)?.length === 0">Нет доступных серверов</div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="content-body player-view">
+      <ng-container *ngIf="(vm$ | async) as vm">
+      <!-- Эквалайзер на весь фон страницы (анимация) -->
+      <div class="player-eq-bg" [class.playing]="vm.state?.isPlaying && !vm.state?.isPaused">
+        <div class="eq-bars-full">
+          <span class="eq-bar-full" *ngFor="let i of eqBarCount; let idx = index"></span>
+        </div>
+      </div>
+      <!-- Стекло с блюром поверх эквалайзера -->
+      <div class="player-glass"></div>
+      <!-- Контент поверх стекла -->
+      <div class="player-content">
+        <ng-container *ngIf="vm.state?.currentTrack; else noTrack">
+          <ng-container *ngIf="vm.state as state">
+            <ng-container *ngIf="state.currentTrack as track">
+              <div class="player-cover-wrap">
+                <div class="player-cover" [class.playing]="state.isPlaying && !state.isPaused">
+                  <img *ngIf="track.thumbnail" [src]="track.thumbnail" [alt]="track.title" class="cover-img" />
+                  <div *ngIf="!track.thumbnail" class="cover-placeholder">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+                    </svg>
+                  </div>
+                </div>
+              </div>
+              <div class="player-info">
+                <h2 class="player-title">{{ track.title }}</h2>
+                <p class="player-author">{{ track.author }}</p>
+              </div>
+
+              <!-- Перемотка: заливка пройденной части, кружок только при наведении -->
+              <div class="player-seek" *ngIf="track.duration && track.duration > 0">
+                <span class="player-time player-time-current">{{ formatTime(state.position ?? 0) }}</span>
+                <div class="player-seek-bar">
+                  <div class="player-seek-fill" [style.width.%]="seekPercent(state.position, track.duration)"></div>
+                  <input
+                    type="range"
+                    class="player-seek-input"
+                    min="0"
+                    [max]="track.duration"
+                    [value]="state.position ?? 0"
+                    step="1"
+                    (input)="onSeek(+$any($event.target).value)"
+                    title="Перемотка"
+                  />
+                </div>
+                <span class="player-time player-time-total">{{ formatTime(track.duration) }}</span>
+              </div>
+
+              <!-- Кнопки: Shuffle | Previous | Play | Next | Repeat -->
+              <div class="player-controls">
+                <button type="button" class="ctrl-btn" [class.active]="vm.shuffle" (click)="toggleShuffle(vm.shuffle)" title="Перемешать" aria-label="Перемешать очередь">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/>
+                  </svg>
+                </button>
+                <button type="button" class="ctrl-btn" (click)="onPrevious()" [disabled]="!vm.connected" title="Предыдущий / с начала" aria-label="Предыдущий трек">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/>
+                  </svg>
+                </button>
+                <button type="button" class="ctrl-btn ctrl-play" (click)="onPlayPause(state, vm.connected)" [disabled]="!vm.connected" [attr.aria-label]="state.isPaused ? 'Воспроизвести' : 'Пауза'">
+                  <svg *ngIf="state.isPaused" width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M8 5v14l11-7z"/>
+                  </svg>
+                  <svg *ngIf="!state.isPaused" width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="6" y="4" width="4" height="16"></rect>
+                    <rect x="14" y="4" width="4" height="16"></rect>
+                  </svg>
+                </button>
+                <button type="button" class="ctrl-btn" (click)="onNext()" [disabled]="!vm.connected" title="Следующий" aria-label="Следующий трек">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+                  </svg>
+                </button>
+                <button type="button" class="ctrl-btn repeat-btn" [class.active]="vm.repeat === 'one'" (click)="toggleRepeat(vm.repeat)" title="Повтор трека" [attr.aria-label]="vm.repeat === 'one' ? 'Выключить повтор' : 'Повтор трека'">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/>
+                  </svg>
+                  <span *ngIf="vm.repeat === 'one'" class="repeat-one-badge">1</span>
+                </button>
+              </div>
+            </ng-container>
+          </ng-container>
+        </ng-container>
+        <ng-template #noTrack>
+          <div class="player-empty">
+            <div class="player-empty-icon">
+              <svg width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+              </svg>
+            </div>
+            <h2 class="player-empty-title">Нет активного трека</h2>
+            <p class="player-empty-hint">Добавьте трек на странице «Панель управления» или через очередь</p>
+          </div>
+        </ng-template>
+      </div>
+      </ng-container>
+    </div>
+  </div>
+</div>

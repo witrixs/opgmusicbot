@@ -11,10 +11,14 @@ import { QueueComponent } from './components/queue/queue.component';
 import { LoaderComponent } from './components/loader/loader.component';
 import { SkeletonComponent } from './components/skeleton/skeleton.component';
 import { SidebarComponent } from './components/sidebar/sidebar.component';
+import { ToastComponent } from './components/toast/toast.component';
 import { ConfirmModalComponent } from './components/confirm-modal/confirm-modal.component';
 import { LoginComponent } from './pages/login/login.component';
 import { LoginSuccessComponent } from './pages/login-success/login-success.component';
 import { DashboardComponent } from './pages/dashboard/dashboard.component';
+import { PlayerPageComponent } from './pages/player/player-page.component';
+import { QueuePageComponent } from './pages/queue/queue-page.component';
+import { SettingsPageComponent } from './pages/settings/settings-page.component';
 import { AuthGuard } from './auth/auth.guard';
 import { AuthInterceptor } from './auth/auth.interceptor';
 
@@ -22,6 +26,9 @@ const routes: Routes = [
   { path: 'login', component: LoginComponent },
   { path: 'login-success', component: LoginSuccessComponent },
   { path: 'dashboard', component: DashboardComponent, canActivate: [AuthGuard] },
+  { path: 'player', component: PlayerPageComponent, canActivate: [AuthGuard] },
+  { path: 'queue', component: QueuePageComponent, canActivate: [AuthGuard] },
+  { path: 'settings', component: SettingsPageComponent, canActivate: [AuthGuard] },
   { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
   { path: '**', redirectTo: 'dashboard' },
 ];
@@ -38,10 +45,14 @@ const routes: Routes = [
     LoaderComponent,
     SkeletonComponent,
     SidebarComponent,
+    ToastComponent,
     ConfirmModalComponent,
     LoginComponent,
     LoginSuccessComponent,
     DashboardComponent,
+    PlayerPageComponent,
+    QueuePageComponent,
+    SettingsPageComponent,
   ],
   imports: [
     BrowserModule,

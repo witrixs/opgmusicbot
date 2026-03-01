@@ -62,11 +62,24 @@
       class="queue-item" 
       *ngFor="let item of displayedTracks; let i = index; trackBy: trackByTrackId"
       [class.current]="isCurrentTrack(item.originalIndex)"
+      [class.hover-play]="hoverOnPlayIndex === item.originalIndex"
+      (mouseenter)="hoverNumIndex = item.originalIndex"
+      (mouseleave)="hoverNumIndex = null; hoverOnPlayIndex = null"
       [@slideIn]
     >
-      <div class="track-number" [class.current]="isCurrentTrack(item.originalIndex)">
-        <span *ngIf="!isCurrentTrack(item.originalIndex)">{{ item.originalIndex + 1 }}</span>
+      <div
+        class="track-number"
+        [class.current]="isCurrentTrack(item.originalIndex)"
+        (mouseenter)="hoverOnPlayIndex = item.originalIndex"
+        (mouseleave)="hoverOnPlayIndex = null"
+        (click)="playTrackAt(item.originalIndex); $event.stopPropagation()"
+        title="Включить трек"
+      >
+        <span *ngIf="!isCurrentTrack(item.originalIndex) && hoverNumIndex !== item.originalIndex">{{ item.originalIndex + 1 }}</span>
         <svg *ngIf="isCurrentTrack(item.originalIndex)" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M8 5v14l11-7z"/>
+        </svg>
+        <svg *ngIf="!isCurrentTrack(item.originalIndex) && hoverNumIndex === item.originalIndex" class="num-play-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
           <path d="M8 5v14l11-7z"/>
         </svg>
       </div>

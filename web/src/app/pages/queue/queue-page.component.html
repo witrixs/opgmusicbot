@@ -1,0 +1,181 @@
+<div class="app-container">
+  <div class="mobile-overlay" [class.active]="sidebarOpen" (click)="closeSidebar()"></div>
+  <app-sidebar [isOpen]="sidebarOpen" (closeSidebar)="closeSidebar()"></app-sidebar>
+
+  <div class="main-content">
+    <header class="content-header">
+      <div class="header-left">
+        <button class="mobile-menu-btn" (click)="toggleSidebar()" aria-label="Меню">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+        <div class="header-title">
+          <h1>Очередь</h1>
+          <p class="header-subtitle">Перетаскивайте треки для изменения порядка</p>
+        </div>
+      </div>
+      <div class="header-right" (click)="$event.stopPropagation()">
+        <div class="guild-switcher">
+          <button type="button" class="guild-btn" (click)="toggleGuildMenu()">
+            <div class="guild-icon">
+              <img *ngIf="(selectedGuild$ | async)?.iconUrl" [src]="(selectedGuild$ | async)?.iconUrl!" [alt]="(selectedGuild$ | async)?.name || 'Server'" class="guild-icon-img" />
+              <div *ngIf="!(selectedGuild$ | async)?.iconUrl" class="guild-icon-fallback">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="14" width="7" height="7"></rect>
+                  <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+              </div>
+            </div>
+            <div class="guild-meta">
+              <div class="guild-name">{{ (selectedGuild$ | async)?.name || 'Выберите сервер' }}</div>
+              <div class="guild-subtitle">Сервер</div>
+            </div>
+            <span class="guild-caret" [class.open]="guildMenuOpen" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </span>
+          </button>
+          <div class="guild-menu" [class.open]="guildMenuOpen">
+            <button type="button" class="guild-menu-item" *ngFor="let g of (guilds$ | async)" [class.active]="g.id === (selectedGuildId$ | async)" (click)="selectGuild(g.id)">
+              <span class="guild-menu-icon">
+                <img *ngIf="g.iconUrl" [src]="g.iconUrl" [alt]="g.name" class="guild-menu-icon-img" />
+                <span *ngIf="!g.iconUrl" class="guild-menu-icon-fallback">{{ (g.name[0] || 'S') }}</span>
+              </span>
+              <span class="guild-menu-name">{{ g.name }}</span>
+            </button>
+            <div class="guild-menu-empty" *ngIf="(guilds$ | async)?.length === 0">Нет доступных серверов</div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="content-body queue-view">
+      <ng-container *ngIf="(queue$ | async) as queue">
+        <div class="queue-main">
+          <div class="queue-list-wrap" #scrollContainer>
+            <div class="queue-toolbar" *ngIf="queue.tracks.length > 0">
+              <span class="queue-count">{{ queue.tracks.length }} {{ queue.tracks.length === 1 ? 'трек' : queue.tracks.length < 5 ? 'трека' : 'треков' }}</span>
+            </div>
+
+            <div class="queue-list" *ngIf="queue.tracks.length > 0">
+              <div
+                *ngFor="let track of queue.tracks; let i = index; trackBy: trackById"
+                class="queue-row"
+                [class.current]="isCurrentTrack(queue, i)"
+                [class.dragging]="dragIndex === i"
+                [class.hover-play]="hoverOnPlayIndex === i"
+                [class.drop-target]="touchDragActive && dropTargetIndex === i"
+                [attr.data-index]="i"
+                draggable="true"
+                (mouseenter)="hoverNumIndex = i"
+                (mouseleave)="hoverNumIndex = null; hoverOnPlayIndex = null"
+                (dragstart)="onDragStart($event, i)"
+                (dragend)="onDragEnd()"
+                (dragover)="onDragOver($event)"
+                (drop)="onDrop($event, i)"
+                (touchstart)="onTouchStart($event, i)"
+              >
+                <div class="queue-row-grip" title="Удерживайте для перетаскивания">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    <circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/>
+                    <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
+                    <circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/>
+                  </svg>
+                </div>
+                <div
+                  class="queue-row-num"
+                  [class.current]="isCurrentTrack(queue, i)"
+                  (mouseenter)="hoverOnPlayIndex = i"
+                  (mouseleave)="hoverOnPlayIndex = null"
+                  (click)="playTrackAt(i); $event.stopPropagation()"
+                  title="Включить трек"
+                >
+                  <span *ngIf="!isCurrentTrack(queue, i) && hoverNumIndex !== i">{{ i + 1 }}</span>
+                  <svg *ngIf="isCurrentTrack(queue, i)" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M8 5v14l11-7z"/>
+                  </svg>
+                  <svg *ngIf="!isCurrentTrack(queue, i) && hoverNumIndex === i" class="num-play-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M8 5v14l11-7z"/>
+                  </svg>
+                </div>
+            <div class="queue-row-cover">
+              <img *ngIf="track.thumbnail" [src]="track.thumbnail" [alt]="" class="cover-img" />
+              <div *ngIf="!track.thumbnail" class="cover-placeholder">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+                </svg>
+              </div>
+            </div>
+            <div class="queue-row-info">
+              <div class="queue-row-title">{{ track.title }}</div>
+              <div class="queue-row-meta">
+                <span class="queue-row-author">{{ track.author }}</span>
+                <span class="queue-row-duration" *ngIf="track.duration">
+                  {{ formatDuration(track.duration) }}
+                </span>
+              </div>
+            </div>
+            <div class="queue-row-badge" *ngIf="isCurrentTrack(queue, i)">
+              <span class="badge-dot"></span>
+              Сейчас играет
+            </div>
+            <button type="button" class="queue-row-remove" (click)="removeTrack(track.id); $event.stopPropagation()" title="Удалить из очереди">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+            <div class="queue-empty" *ngIf="queue.tracks.length === 0">
+          <div class="queue-empty-icon">
+            <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+            </svg>
+          </div>
+          <p class="queue-empty-title">Очередь пуста</p>
+          <span class="queue-empty-hint">Добавьте треки на странице «Панель управления» или «Плеер»</span>
+            </div>
+          </div>
+
+          <aside class="queue-sidebar" *ngIf="queue.tracks.length > 0">
+            <div class="now-playing">
+              <div class="now-cover-wrap">
+                <img *ngIf="getCurrentTrack(queue)?.thumbnail" [src]="getCurrentTrack(queue)!.thumbnail!" [alt]="" class="now-cover" />
+                <div *ngIf="!getCurrentTrack(queue)?.thumbnail" class="now-cover-placeholder">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+                  </svg>
+                </div>
+              </div>
+              <p class="now-label">Сейчас играет</p>
+              <p class="now-title">{{ getCurrentTrack(queue)?.title || '—' }}</p>
+            </div>
+            <div class="next-track" *ngIf="getNextTrack(queue)">
+              <p class="next-label">Далее</p>
+              <div class="next-row">
+                <div class="next-cover-wrap">
+                  <img *ngIf="getNextTrack(queue)?.thumbnail" [src]="getNextTrack(queue)!.thumbnail!" [alt]="" class="next-cover" />
+                  <div *ngIf="!getNextTrack(queue)?.thumbnail" class="next-cover-placeholder">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+                    </svg>
+                  </div>
+                </div>
+                <p class="next-title">{{ getNextTrack(queue)?.title }}</p>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </ng-container>
+    </div>
+  </div>
+</div>

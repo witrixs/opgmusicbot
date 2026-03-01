@@ -1,29 +1,74 @@
-import { Component, EventEmitter, HostListener, Input, Output } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, HostListener, Input, OnDestroy, Output } from '@angular/core';
+import { Router } from '@angular/router';
 import { AuthService, AuthUser } from '../../auth/auth.service';
+import { VersionCheckService, VersionState } from '../../services/version-check.service';
+import { ToastService } from '../../services/toast.service';
+import { CURRENT_VERSION } from '../../constants/version';
+import { Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-sidebar',
   templateUrl: './sidebar.component.html',
   styleUrls: ['./sidebar.component.css']
 })
-export class SidebarComponent {
+export class SidebarComponent implements OnDestroy {
   @Input() isOpen = false;
   @Output() closeSidebar = new EventEmitter<void>();
-  appVersion = '2';
+
+  versionState: VersionState | null = null;
+  readonly fallbackVersion = CURRENT_VERSION;
+  private versionSub: Subscription | null = null;
 
   user: AuthUser | null;
   userMenuOpen = false;
   logoutModalOpen = false;
-  
+
   menuItems = [
-    { icon: 'dashboard', label: 'Панель управления', route: '/', active: true },
-    { icon: 'music', label: 'Плеер', route: '/player', active: false },
-    { icon: 'queue', label: 'Очередь', route: '/queue', active: false },
-    { icon: 'settings', label: 'Настройки', route: '/settings', active: false }
+    { icon: 'dashboard', label: 'Панель управления', route: '/dashboard' },
+    { icon: 'music', label: 'Плеер', route: '/player' },
+    { icon: 'queue', label: 'Очередь', route: '/queue' },
+    { icon: 'settings', label: 'Настройки', route: '/settings' }
   ];
 
-  constructor(private readonly auth: AuthService) {
+  constructor(
+    private readonly auth: AuthService,
+    public readonly router: Router,
+    private readonly versionCheck: VersionCheckService,
+    private readonly toast: ToastService,
+    private readonly cdr: ChangeDetectorRef
+  ) {
     this.user = this.auth.getUserFromToken();
+    const isAdmin = this.user?.isAdmin === true;
+
+    if (isAdmin) {
+      this.versionSub = this.versionCheck.getState().subscribe(state => {
+        this.versionState = state;
+        if (!state.isLoading && state.hasUpdate && state.latestVersion != null) {
+          this.toast.showUpdateAvailable(state.latestVersion, state.releaseUrl);
+        }
+        this.cdr.markForCheck();
+      });
+      this.versionCheck.check();
+    } else {
+      this.versionState = {
+        currentVersion: CURRENT_VERSION,
+        latestVersion: null,
+        releaseUrl: null,
+        hasUpdate: false,
+        isLoading: false,
+        error: false,
+      };
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.versionSub?.unsubscribe();
+  }
+
+  isActiveRoute(route: string): boolean {
+    const url = this.router.url;
+    if (route === '/dashboard') return url === '' || url === '/' || url === '/dashboard';
+    return url.startsWith(route);
   }
 
   onLinkClick() {

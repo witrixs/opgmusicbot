@@ -41,6 +41,11 @@ export class QueueComponent implements OnInit, OnDestroy {
   warningOpen = false;
   warningTitle = 'Предупреждение';
   warningMessage = '';
+
+  // Наведение на строку трека — показать иконку play
+  hoverNumIndex: number | null = null;
+  // Наведение на сам значек play/номер — показать обводку
+  hoverOnPlayIndex: number | null = null;
   
   // Подписки для отписки при уничтожении компонента
   private subscriptions: Subscription[] = [];
@@ -154,6 +159,15 @@ export class QueueComponent implements OnInit, OnDestroy {
     this.warningOpen = false;
     this.warningTitle = 'Предупреждение';
     this.warningMessage = '';
+  }
+
+  /**
+   * Включить трек в очереди по индексу
+   */
+  playTrackAt(originalIndex: number): void {
+    this.musicService.playQueueIndex(originalIndex).subscribe({
+      error: (err) => console.error('Play queue index failed', err),
+    });
   }
 
   /**

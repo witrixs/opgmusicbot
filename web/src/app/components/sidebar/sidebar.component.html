@@ -6,7 +6,15 @@
       </div>
       <div class="logo-text">
         <div class="logo-title">OPGMusic</div>
-        <div class="logo-version">v{{ appVersion }} (Beta)</div>
+        <div class="logo-version">
+          <ng-container *ngIf="versionState?.hasUpdate && versionState?.latestVersion">
+            <a class="logo-version-link" [href]="versionState?.releaseUrl || 'https://github.com/witrixs/opgmusicbot/releases'" target="_blank" rel="noopener noreferrer" [attr.title]="'Требуется обновление до v' + (versionState?.latestVersion ?? '')">Требуется обновление</a>
+          </ng-container>
+          <ng-container *ngIf="!versionState || !versionState.hasUpdate || versionState.isLoading">
+            <span *ngIf="versionState?.isLoading">...</span>
+            <span *ngIf="!versionState || !versionState.isLoading">v{{ (versionState?.currentVersion) || fallbackVersion }}</span>
+          </ng-container>
+        </div>
       </div>
     </div>
   </div>
@@ -15,8 +23,8 @@
     <div class="nav-section">
       <div class="nav-section-title">Платформа</div>
       <ul class="nav-list">
-        <li *ngFor="let item of menuItems" class="nav-item" [class.active]="item.active">
-          <a href="#" class="nav-link" (click)="onLinkClick()">
+        <li *ngFor="let item of menuItems" class="nav-item" [class.active]="isActiveRoute(item.route)">
+          <a [routerLink]="item.route" class="nav-link" (click)="onLinkClick()">
             <span class="nav-icon">
               <svg *ngIf="item.icon === 'dashboard'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="3" width="7" height="7"></rect>
@@ -48,7 +56,7 @@
       <div class="nav-section-title">Сообщество</div>
       <ul class="nav-list">
         <li class="nav-item">
-          <a href="#" class="nav-link" (click)="onLinkClick()">
+          <a href="https://github.com/witrixs/opgmusicbot" class="nav-link" (click)="onLinkClick()">
             <span class="nav-icon">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
@@ -59,7 +67,7 @@
           </a>
         </li>
         <li class="nav-item">
-          <a href="#" class="nav-link" (click)="onLinkClick()">
+          <a href="https://github.com/witrixs" class="nav-link" (click)="onLinkClick()">
             <span class="nav-icon">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>

@@ -4,6 +4,8 @@ export type AuthUser = {
   discordId: string;
   username: string;
   avatar: string | null;
+  /** true, если пользователь админ хотя бы на одном сервере Discord, где есть бот */
+  isAdmin?: boolean;
 };
 
 type JwtPayload = AuthUser & {
@@ -57,6 +59,7 @@ export class AuthService {
       discordId: payload.discordId,
       username: payload.username,
       avatar: payload.avatar ?? null,
+      isAdmin: payload.isAdmin === true,
     };
   }
 

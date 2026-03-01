@@ -1,0 +1,166 @@
+<div class="app-container">
+  <div class="mobile-overlay" [class.active]="sidebarOpen" (click)="closeSidebar()"></div>
+  <app-sidebar [isOpen]="sidebarOpen" (closeSidebar)="closeSidebar()"></app-sidebar>
+
+  <div class="main-content">
+    <header class="content-header">
+      <div class="header-left">
+        <button class="mobile-menu-btn" (click)="toggleSidebar()" aria-label="Меню">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+        <div class="header-title">
+          <h1>Настройки</h1>
+          <p class="header-subtitle">Аккаунт и справка по боту</p>
+        </div>
+      </div>
+    </header>
+
+    <div class="content-body">
+      <!-- Блок аккаунта -->
+      <section class="settings-section card-reveal" [style.animation-delay]="'0ms'">
+        <h2 class="section-title">
+          <span class="section-icon">👤</span>
+          Ваш аккаунт
+        </h2>
+        <div class="account-card">
+          <div class="account-avatar-wrap">
+            <img
+              *ngIf="avatarUrl"
+              [src]="avatarUrl"
+              alt="Аватар"
+              class="account-avatar"
+            />
+            <span *ngIf="!avatarUrl" class="account-avatar-fallback">{{ (user?.username?.[0] || 'U') }}</span>
+          </div>
+          <div class="account-fields">
+            <div class="account-row">
+              <span class="account-label">Текущий сервер</span>
+              <span class="account-value">{{ (selectedGuild$ | async)?.name || '—' }}</span>
+            </div>
+            <div class="account-row">
+              <span class="account-label">Логин Discord</span>
+              <span class="account-value">{{ user?.username || '—' }}</span>
+            </div>
+            <div class="account-row">
+              <span class="account-label">Discord ID</span>
+              <span class="account-value account-value-mono">{{ user?.discordId || '—' }}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Настройки в разработке -->
+      <section class="settings-section card-reveal" [style.animation-delay]="'80ms'">
+        <div class="wip-banner">
+          <span class="wip-icon">🚧</span>
+          <span>Настройки ещё в разработке. Скоро здесь можно будет изменить параметры бота.</span>
+        </div>
+      </section>
+
+      <!-- Справка: команды -->
+      <section class="settings-section card-reveal" [style.animation-delay]="'160ms'">
+        <h2 class="section-title">
+          <span class="section-icon">📋</span>
+          Команды бота
+        </h2>
+        <p class="section-desc">В Discord используйте слэш-команды (/) на сервере, где добавлен бот.</p>
+        <div class="help-grid">
+          <div class="help-card">
+            <code class="help-cmd">/play &lt;запрос&gt;</code>
+            <p>Воспроизвести трек или добавить в очередь. Можно ввести название или ссылку.</p>
+          </div>
+          <div class="help-card">
+            <code class="help-cmd">/pause</code>
+            <p>Поставить воспроизведение на паузу.</p>
+          </div>
+          <div class="help-card">
+            <code class="help-cmd">/resume</code>
+            <p>Возобновить воспроизведение.</p>
+          </div>
+          <div class="help-card">
+            <code class="help-cmd">/skip</code>
+            <p>Пропустить текущий трек.</p>
+          </div>
+          <div class="help-card">
+            <code class="help-cmd">/queue</code>
+            <p>Показать очередь треков.</p>
+          </div>
+          <div class="help-card">
+            <code class="help-cmd">/stop</code>
+            <p>Остановить воспроизведение и отключить бота от канала.</p>
+          </div>
+          <div class="help-card">
+            <code class="help-cmd">/help</code>
+            <p>Показать список всех команд.</p>
+          </div>
+          <div class="help-card">
+            <code class="help-cmd">/ping</code>
+            <p>Проверить задержку бота.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Ссылки: что можно и что нельзя -->
+      <section class="settings-section card-reveal" [style.animation-delay]="'240ms'">
+        <h2 class="section-title">
+          <span class="section-icon">🔗</span>
+          Ссылки
+        </h2>
+        <div class="links-grid">
+          <div class="links-card ok">
+            <h3>Можно использовать</h3>
+            <ul>
+              <li>Прямые ссылки на <strong>YouTube</strong> (видео)</li>
+              <li>Прямые ссылки на <strong>SoundCloud</strong> (треки, плейлисты)</li>
+              <li>Поиск по названию — по умолчанию бот ищет на YouTube; поддерживается также поиск на SoundCloud</li>
+            </ul>
+          </div>
+          <div class="links-card no">
+            <h3>Не поддерживаются</h3>
+            <ul>
+              <li>Плейлисты и альбомы <strong>Spotify</strong> (DRM)</li>
+              <li>Прямые ссылки на треки Spotify</li>
+            </ul>
+            <p class="links-tip">Скопируйте название и исполнителя из Spotify и введите в <code>/play</code> — бот найдёт трек на YouTube.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Как искать трек -->
+      <section class="settings-section card-reveal" [style.animation-delay]="'320ms'">
+        <h2 class="section-title">
+          <span class="section-icon">🎵</span>
+          Как искать трек
+        </h2>
+        <p class="section-desc">Укажите название трека или артиста. Пример:</p>
+        <div class="example-block">
+          <code class="example-cmd">/play Macan</code>
+          <p class="example-desc">Бот найдёт треки по запросу «Macan» на YouTube и добавит первый результат в очередь.</p>
+        </div>
+        <p class="section-desc">Можно писать полное название: <code>/play Название трека — Исполнитель</code>.</p>
+      </section>
+
+      <!-- Источники поиска и воспроизведения -->
+      <section class="settings-section card-reveal" [style.animation-delay]="'400ms'">
+        <h2 class="section-title">
+          <span class="section-icon">🌐</span>
+          Откуда ищутся и воспроизводятся треки
+        </h2>
+        <div class="sources-block">
+          <div class="source-item">
+            <span class="source-label">Поиск</span>
+            <span class="source-value">YouTube и SoundCloud через Lavalink. По названию (по умолчанию — YouTube) или по прямой ссылке на видео/трек.</span>
+          </div>
+          <div class="source-item">
+            <span class="source-label">Воспроизведение</span>
+            <span class="source-value">Стриминг через Lavalink: аудио из YouTube и SoundCloud. Бот подключается к голосовому каналу Discord и передаёт звук участникам.</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
