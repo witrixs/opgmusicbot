@@ -1,6 +1,6 @@
 {
   "name": "opgbot-music",
-  "version": "2.0.0",
+  "version": "2.1.7",
   "description": "Discord music bot with NestJS and Lavalink",
   "main": "dist/main.js",
   "scripts": {
@@ -28,7 +28,7 @@
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",
-    "shoukaku": "^3.3.2"
+    "shoukaku": "^4.2.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.0.0",
