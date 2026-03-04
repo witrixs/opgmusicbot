@@ -60,7 +60,10 @@ export class LavalinkService implements OnModuleInit {
       },
     ];
 
-    this.logger.log(`Инициализация Shoukaku с узлом: ${nodes[0].url} (secure: ${nodes[0].secure})`);
+    this.logger.log(
+      `Инициализация Shoukaku с узлом: ${nodes[0].url} (secure: ${nodes[0].secure}). ` +
+        'Shoukaku 4 подключается к Lavalink v4 (путь /v4/websocket). При 404 обновите сервер Lavalink до v4.',
+    );
 
     const options: ShoukakuOptions = {
       moveOnDisconnect: false,
@@ -68,6 +71,7 @@ export class LavalinkService implements OnModuleInit {
       resumeTimeout: 30,
       reconnectTries: 2,
       restTimeout: 10000,
+      nodeResolver: (nodes) => nodes.get('main') ?? Array.from(nodes.values())[0],
     };
 
     // Используем Discord.js коннектор для Shoukaku, если клиент установлен
@@ -98,8 +102,8 @@ export class LavalinkService implements OnModuleInit {
       this.logger.warn(`Lavalink node "${name}" closed: ${code} ${reason}`);
     });
 
-    this.shoukaku.on('disconnect', (name, players, moved) => {
-      this.logger.warn(`Lavalink node "${name}" disconnected. Moved: ${moved}`);
+    this.shoukaku.on('disconnect', (name, count) => {
+      this.logger.warn(`Lavalink node "${name}" disconnected. Count: ${count}`);
     });
 
     this.shoukaku.on('debug', (name, info) => {

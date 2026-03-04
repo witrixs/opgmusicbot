@@ -2,8 +2,16 @@ import { Injectable, Logger } from '@nestjs/common';
 import { LavalinkService } from '../lavalink/lavalink.service';
 import { PlayerManager } from './player.manager';
 import { Queue, QueueTrack } from './queue';
-import { Node } from 'shoukaku';
 import { MusicEventsService } from './music.events.service';
+import { LoadType } from 'shoukaku';
+import type { Track, PlaylistResult, SearchResult, TrackResult } from 'shoukaku';
+
+function getTracksFromLavalinkResponse(result: import('shoukaku').LavalinkResponse): Track[] {
+  if (result.loadType === LoadType.SEARCH) return (result as SearchResult).data;
+  if (result.loadType === LoadType.PLAYLIST) return (result as PlaylistResult).data.tracks;
+  if (result.loadType === LoadType.TRACK) return [(result as TrackResult).data];
+  return [];
+}
 
 /**
  * Сервис для управления музыкой
@@ -31,20 +39,15 @@ export class MusicService {
     this.playerManager.setOnQueueEmptyCallback(async (guildId: string) => {
       await this.deletePlayerMessage(guildId);
     });
-    // Устанавливаем callback для отключения от канала
+    // Устанавливаем callback для отключения от канала (Shoukaku v4: leaveVoiceChannel)
     this.playerManager.setOnDisconnectCallback(async (guildId: string) => {
       const shoukaku = this.lavalinkService.getClient();
-      if (!shoukaku) {
-        return;
-      }
-      const node = shoukaku.getNode('main') || Array.from(shoukaku.nodes.values())[0];
-      if (node) {
-        try {
-          node.leaveChannel(guildId);
-          this.logger.log(`Bot disconnected from voice channel for guild ${guildId}`);
-        } catch (error) {
-          this.logger.error(`Error disconnecting from channel for guild ${guildId}: ${error.message}`);
-        }
+      if (!shoukaku) return;
+      try {
+        await shoukaku.leaveVoiceChannel(guildId);
+        this.logger.log(`Bot disconnected from voice channel for guild ${guildId}`);
+      } catch (error) {
+        this.logger.error(`Error disconnecting from channel for guild ${guildId}: ${(error as Error).message}`);
       }
     });
     // Устанавливаем callback для удаления сообщения при очистке сессии
@@ -135,11 +138,10 @@ export class MusicService {
         return '❌ Lavalink узлы не добавлены. Проверьте конфигурацию.';
       }
 
-      // Получаем узел по имени 'main' или первый доступный
-      const node = shoukaku.getNode('main') || Array.from(shoukaku.nodes.values())[0];
+      const node = shoukaku.getIdealNode();
 
       if (!node) {
-        this.logger.warn(`Node 'main' not found. Available nodes: ${Array.from(shoukaku.nodes.keys()).join(', ')}`);
+        this.logger.warn(`No ideal node. Available nodes: ${Array.from(shoukaku.nodes.keys()).join(', ')}`);
         return '❌ Lavalink узел недоступен. Узлы еще не подключены.';
       }
 
@@ -181,11 +183,12 @@ export class MusicService {
         return '❌ Ошибка при обращении к Lavalink серверу. Проверьте подключение и логи сервера.';
       }
 
-      this.logger.log(`Результат поиска: loadType=${result.loadType}, tracks=${result.tracks.length}`);
+      const tracks = getTracksFromLavalinkResponse(result);
+      this.logger.log(`Результат поиска: loadType=${result.loadType}, tracks=${tracks.length}`);
 
-      if (result.tracks.length === 0) {
+      if (tracks.length === 0) {
         this.logger.warn(`Трек не найден для запроса: ${searchQuery}, loadType: ${result.loadType}`);
-        if (result.loadType === 'LOAD_FAILED') {
+        if (result.loadType === LoadType.ERROR) {
           return '❌ Ошибка загрузки трека. Возможно, требуется обновление Lavalink.';
         }
         return '❌ Трек не найден. Попробуйте использовать прямую ссылку на YouTube видео, или обновите Lavalink до версии 4+ для поддержки поиска.';
@@ -193,33 +196,32 @@ export class MusicService {
 
       const queue = this.playerManager.getQueue(guildId);
 
-      // Проверяем, не подключен ли бот уже к другому каналу на этом сервере
       const existingPlayer = this.playerManager.getPlayer(guildId);
-      const existingState = existingPlayer?.connection?.state;
-      const isExistingConnected = existingState === 1; // CONNECTED
+      const connection = this.playerManager.getConnection(guildId);
+      const existingState = connection?.state;
+      const isExistingConnected = existingState === 1;
 
-      // Если плеер "завис" (бот кикнут/отключен), пересоздаем сессию даже если channelId совпадает
       if (existingPlayer && !isExistingConnected) {
         this.logger.warn(
           `Existing player for guild ${guildId} is not connected (state=${existingState}). Resetting session before play...`,
         );
         try {
-          node.leaveChannel(guildId);
+          await shoukaku.leaveVoiceChannel(guildId);
         } catch {
           // ignore
         }
         await this.playerManager.resetGuildSession(guildId, 'stale_player');
-      } else if (existingPlayer && existingPlayer.connection.channelId && existingPlayer.connection.channelId !== voiceChannelId) {
-        this.logger.log(`Bot is already in channel ${existingPlayer.connection.channelId}, disconnecting first...`);
-        node.leaveChannel(guildId);
+      } else if (existingPlayer && connection?.channelId && connection.channelId !== voiceChannelId) {
+        this.logger.log(`Bot is already in channel ${connection.channelId}, disconnecting first...`);
+        await shoukaku.leaveVoiceChannel(guildId);
         await this.playerManager.resetGuildSession(guildId, 'switch_channel');
       }
 
-      // Подключаемся к голосовому каналу при необходимости
       let player = this.playerManager.getPlayer(guildId);
-      if (!player || player.connection.channelId !== voiceChannelId || player.connection.state !== 1) {
+      const conn = this.playerManager.getConnection(guildId);
+      if (!player || conn?.channelId !== voiceChannelId || conn?.state !== 1) {
         this.logger.log(`Joining voice channel ${voiceChannelId} for guild ${guildId}`);
-        player = await node.joinChannel({
+        player = await shoukaku.joinVoiceChannel({
           guildId,
           shardId: 0,
           channelId: voiceChannelId,
@@ -231,12 +233,11 @@ export class MusicService {
 
       this.playerManager.resetInactivityTimer(guildId);
 
-      // Плейлист YouTube: добавляем все треки в очередь
-      const isPlaylist = result.loadType === 'PLAYLIST_LOADED';
+      const isPlaylist = result.loadType === LoadType.PLAYLIST;
       if (isPlaylist) {
-        const queueTracks: QueueTrack[] = result.tracks.map((t) => ({
-          track: t.track,
-          info: t.info,
+        const queueTracks: QueueTrack[] = tracks.map((t) => ({
+          track: t.encoded ?? '',
+          info: { ...t.info, uri: t.info.uri ?? '' },
           requesterId: userId,
           requesterName: userName,
         }));
@@ -246,15 +247,14 @@ export class MusicService {
         if (!isActive) {
           await this.playerManager.playNext(guildId);
         }
-        const playlistName = (result as { playlistInfo?: { name?: string } }).playlistInfo?.name || 'Плейлист';
-        return `▶️ В очередь добавлен плейлист **${playlistName}** (${result.tracks.length} треков)${!isActive ? ', воспроизведение начато' : ''}.`;
+        const playlistName = result.loadType === LoadType.PLAYLIST ? (result as PlaylistResult).data.info?.name || 'Плейлист' : 'Плейлист';
+        return `▶️ В очередь добавлен плейлист **${playlistName}** (${tracks.length} треков)${!isActive ? ', воспроизведение начато' : ''}.`;
       }
 
-      // Один трек
-      const track = result.tracks[0];
+      const track = tracks[0];
       const queueTrack: QueueTrack = {
-        track: track.track,
-        info: track.info,
+        track: track.encoded ?? '',
+        info: { ...track.info, uri: track.info.uri ?? '' },
         requesterId: userId,
         requesterName: userName,
       };
@@ -455,18 +455,10 @@ export class MusicService {
       return '❌ Бот не подключен к голосовому каналу';
     }
 
-    const node = shoukaku.getNode('main') || Array.from(shoukaku.nodes.values())[0];
-    if (!node) {
-      await this.playerManager.resetGuildSession(guildId, 'stop_no_node');
-      return '❌ Lavalink узел недоступен';
-    }
-
-    // Останавливаем воспроизведение и отключаемся
     if (player.track) {
       await player.stopTrack();
     }
-    
-    node.leaveChannel(guildId);
+    await shoukaku.leaveVoiceChannel(guildId);
     await this.playerManager.resetGuildSession(guildId, 'stop');
     
     return '⏹️ Воспроизведение остановлено. Бот отключен от голосового канала';

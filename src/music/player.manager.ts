@@ -1,7 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Player, VoiceChannelOptions, Node } from 'shoukaku';
+import type { Connection } from 'shoukaku';
 import { Queue, QueueTrack } from './queue';
 import { MusicEventsService } from './music.events.service';
+import { LavalinkService } from '../lavalink/lavalink.service';
 
 /**
  * Менеджер для управления плеером Lavalink на сервере
@@ -29,7 +31,15 @@ export class PlayerManager {
   /** При ручной смене трека (skip/previous) не реагировать на 'end', чтобы не вызывать playNext дважды */
   private manualChangeInProgress: Set<string> = new Set();
 
-  constructor(private readonly events: MusicEventsService) {}
+  constructor(
+    private readonly events: MusicEventsService,
+    private readonly lavalinkService: LavalinkService,
+  ) {}
+
+  /** В Shoukaku v4 connection хранится в shoukaku.connections, а не в player */
+  getConnection(guildId: string): Connection | undefined {
+    return this.lavalinkService.getClient()?.connections.get(guildId);
+  }
 
   /** Вызвать перед stopTrack() при skip/previous — тогда 'end' не вызовет playNext */
   setManualChangeInProgress(guildId: string, value: boolean): void {
@@ -85,7 +95,7 @@ export class PlayerManager {
     this.lastPlaybackError.delete(guildId);
     this.lastActiveChannelIds.delete(guildId);
 
-    // Отключаемся от голосового канала через callback (если установлен)
+    // Отключаемся от голосового канала через callback (Shoukaku v4: leaveVoiceChannel)
     if (this.onDisconnectCallback) {
       try {
         await this.onDisconnectCallback(guildId);
@@ -94,15 +104,13 @@ export class PlayerManager {
       }
     }
 
-    // удаляем player/queue
+    // удаляем player/queue (Shoukaku v4: leaveVoiceChannel уже уничтожил connection и player)
     const player = this.players.get(guildId);
     if (player) {
       try {
-        // Останавливаем воспроизведение, если оно идет
         if (player.track) {
-          player.stopTrack();
+          await player.stopTrack();
         }
-        player.connection.disconnect();
       } catch {
         // ignore
       }
@@ -158,133 +166,11 @@ export class PlayerManager {
   }
 
   /**
-   * Создать или получить плеер для гильдии
-   * @param {string} guildId - ID гильдии Discord
-   * @param {VoiceChannelOptions & { node: Node }} options - Опции для создания плеера
-   * @returns {Player} Плеер для гильдии
+   * В Shoukaku v4 плеер создаётся через shoukaku.joinVoiceChannel() в MusicService.
+   * Этот метод оставлен для совместимости, но не используется при обычном flow.
    */
-  createPlayer(guildId: string, options: VoiceChannelOptions & { node: Node }): Player {
-    if (this.players.has(guildId)) {
-      const existingPlayer = this.players.get(guildId)!;
-      // Если канал изменился, переподключаемся
-      if (existingPlayer.connection.channelId !== options.channelId) {
-        existingPlayer.connection.connect({
-          guildId: options.guildId,
-          shardId: options.shardId,
-          channelId: options.channelId,
-          deaf: options.deaf,
-          mute: options.mute,
-        }).catch((error) => {
-          this.logger.error(`Error reconnecting player for guild ${guildId}: ${error.message}`);
-        });
-      }
-      return existingPlayer;
-    }
-
-    // Создаем Player (в Shoukaku 3.3.2 Player не подключается автоматически)
-    const player = new Player(options.node, {
-      guildId: options.guildId,
-      shardId: options.shardId,
-      channelId: options.channelId,
-      deaf: options.deaf,
-      mute: options.mute,
-    });
-    this.players.set(guildId, player);
-
-    // Создаем очередь для гильдии, если её нет
-    if (!this.queues.has(guildId)) {
-      this.queues.set(guildId, new Queue());
-    }
-
-    // Логирование состояния соединения до подключения
-    this.logger.log(`Player created for guild ${guildId}, connection state: ${player.connection.state}, channelId: ${options.channelId}`);
-    
-    // Подключаемся к голосовому каналу (не ждем, подключение происходит асинхронно)
-    this.logger.log(`Attempting to connect to voice channel ${options.channelId} for guild ${guildId}`);
-    player.connection.connect({
-      guildId: options.guildId,
-      shardId: options.shardId,
-      channelId: options.channelId,
-      deaf: options.deaf,
-      mute: options.mute,
-    }).catch((error) => {
-      this.logger.error(`Error connecting to voice channel for guild ${guildId}: ${error.message}`);
-    });
-    
-    // Обработка событий соединения
-    player.connection.on('ready', () => {
-      this.logger.log(`Voice connection ready for guild ${guildId}`);
-    });
-
-    player.connection.on('error', (error) => {
-      this.logger.error(`Voice connection error for guild ${guildId}: ${error.message}`);
-    });
-
-    player.connection.on('disconnect', () => {
-      this.logger.warn(`Voice connection disconnected for guild ${guildId}`);
-      // Если бота кикнули/он отключился — сбрасываем сессию (очередь очищаем)
-      this.cleanupGuild(guildId, 'voice_disconnect').catch((error) => {
-        this.logger.error(`Error in cleanupGuild after disconnect: ${error.message}`);
-      });
-    });
-
-    // Обработка событий плеера
-    player.on('start', () => {
-      this.playbackActive.set(guildId, true);
-      this.events.emit(guildId, 'track_start');
-    });
-
-    player.on('end', () => {
-      if (this.manualChangeInProgress.has(guildId)) {
-        this.logger.log(`Track end ignored (manual change) in guild ${guildId}`);
-        return;
-      }
-      this.logger.log(`Track ended in guild ${guildId}`);
-      this.playbackActive.set(guildId, false);
-      this.events.emit(guildId, 'track_end');
-      if (this.getRepeatMode(guildId) === 'one') {
-        this.replayCurrent(guildId);
-      } else if (this.getShuffleMode(guildId)) {
-        this.playRandom(guildId);
-      } else {
-        this.playNext(guildId);
-      }
-    });
-
-    player.on('exception', (data) => {
-      this.lastPlaybackError.set(guildId, {
-        at: Date.now(),
-        error: data.error || 'TrackExceptionEvent',
-        message: data.exception?.message,
-        cause: data.exception?.cause,
-        severity: data.exception?.severity,
-      });
-
-      this.logger.error(
-        `Player exception in guild ${guildId}: error="${data.error}"` +
-          (data.exception?.message ? ` message="${data.exception.message}"` : '') +
-          (data.exception?.cause ? ` cause="${data.exception.cause}"` : '') +
-          (data.exception?.severity ? ` severity="${data.exception.severity}"` : ''),
-      );
-
-      // Удаляем проблемный трек (текущий) из очереди, чтобы не застревать
-      const queue = this.getQueue(guildId);
-      const idx = queue.getCurrentIndex();
-      if (idx >= 0) {
-        queue.remove(idx);
-      }
-      this.playbackActive.set(guildId, false);
-      this.events.emit(guildId, 'track_exception');
-      this.playNext(guildId);
-    });
-
-    player.on('closed', (data) => {
-      this.logger.warn(`Player closed in guild ${guildId}: ${data.reason}`);
-      this.playbackActive.set(guildId, false);
-      this.events.emit(guildId, 'ws_closed');
-    });
-
-    return player;
+  createPlayer(_guildId: string, _options: VoiceChannelOptions & { node: Node }): Player {
+    throw new Error('Shoukaku v4: use shoukaku.joinVoiceChannel() and setPlayer() instead of createPlayer()');
   }
 
   /**
@@ -309,21 +195,13 @@ export class PlayerManager {
       this.queues.set(guildId, new Queue());
     }
 
-    // Обработка событий соединения
-    player.connection.once('ready', () => {
-      this.logger.log(`Voice connection ready for guild ${guildId}`);
-    });
-
-    player.connection.once('error', (error) => {
-      this.logger.error(`Voice connection error for guild ${guildId}: ${error.message}`);
-    });
-
-    player.connection.once('disconnect', () => {
-      this.logger.warn(`Voice connection disconnected for guild ${guildId}`);
-      this.cleanupGuild(guildId, 'voice_disconnect').catch((error) => {
-        this.logger.error(`Error in cleanupGuild after disconnect: ${error.message}`);
+    // Обработка событий соединения (Shoukaku v4: connection в shoukaku.connections)
+    const connection = this.getConnection(guildId);
+    if (connection) {
+      connection.once('connectionUpdate', (state: number) => {
+        if (state === 0) this.logger.log(`Voice connection ready for guild ${guildId}`);
       });
-    });
+    }
 
     // Обработка событий плеера
     player.on('start', () => {
@@ -349,19 +227,20 @@ export class PlayerManager {
     });
 
     player.on('exception', (data) => {
+      const exc = data.exception;
       this.lastPlaybackError.set(guildId, {
         at: Date.now(),
-        error: data.error || 'TrackExceptionEvent',
-        message: data.exception?.message,
-        cause: data.exception?.cause,
-        severity: data.exception?.severity,
+        error: exc?.message || 'TrackExceptionEvent',
+        message: exc?.message,
+        cause: exc?.cause,
+        severity: exc?.severity,
       });
 
       this.logger.error(
-        `Player exception in guild ${guildId}: error="${data.error}"` +
-          (data.exception?.message ? ` message="${data.exception.message}"` : '') +
-          (data.exception?.cause ? ` cause="${data.exception.cause}"` : '') +
-          (data.exception?.severity ? ` severity="${data.exception.severity}"` : ''),
+        `Player exception in guild ${guildId}: error="${exc?.message ?? 'TrackExceptionEvent'}"` +
+          (exc?.message ? ` message="${exc.message}"` : '') +
+          (exc?.cause ? ` cause="${exc.cause}"` : '') +
+          (exc?.severity ? ` severity="${exc.severity}"` : ''),
       );
 
       const queue = this.getQueue(guildId);
@@ -406,40 +285,34 @@ export class PlayerManager {
       return;
     }
 
-    // Проверяем состояние соединения (State enum: 0=CONNECTING, 1=CONNECTED, 2=DISCONNECTING, 3=DISCONNECTED)
-    this.logger.log(`Connection state before play: ${player.connection.state}, channelId: ${player.connection.channelId}`);
-    
-    // Ждем, пока соединение будет готово (state 1 = CONNECTED)
-    if (player.connection.state !== 1) {
+    let connection = this.getConnection(guildId);
+    this.logger.log(`Connection state before play: ${connection?.state ?? 'none'}, channelId: ${connection?.channelId ?? 'none'}`);
+
+    if (!connection || connection.state !== 1) {
       this.logger.log(`Waiting for voice connection to be ready for guild ${guildId}...`);
       await new Promise<void>((resolve, reject) => {
+        const conn = connection ?? this.getConnection(guildId);
+        if (conn?.state === 1) {
+          resolve();
+          return;
+        }
         const timeout = setTimeout(() => {
-          player.connection.off('ready', onReady);
-          player.connection.off('error', onError);
+          conn?.off('connectionUpdate', onReady);
           reject(new Error('Voice connection timeout'));
-        }, 20000); // 20 секунд таймаут
+        }, 20000);
 
-        const onReady = () => {
+        const onReady = (state: number) => {
+          if (state !== 0) return; // 0 = SESSION_READY
           clearTimeout(timeout);
-          player.connection.off('ready', onReady);
-          player.connection.off('error', onError);
+          conn?.off('connectionUpdate', onReady);
           this.logger.log(`Voice connection ready, proceeding with playback for guild ${guildId}`);
           resolve();
         };
 
-        const onError = (error: Error) => {
-          clearTimeout(timeout);
-          player.connection.off('ready', onReady);
-          player.connection.off('error', onError);
-          reject(error);
-        };
-
-        if (player.connection.state === 1) {
-          clearTimeout(timeout);
-          resolve();
+        if (conn) {
+          conn.once('connectionUpdate', onReady);
         } else {
-          player.connection.once('ready', onReady);
-          player.connection.once('error', onError);
+          reject(new Error('Voice connection not found'));
         }
       }).catch((error) => {
         this.logger.error(`Error waiting for voice connection: ${error.message}`);
@@ -475,7 +348,7 @@ export class PlayerManager {
     this.resetInactivityTimer(guildId);
 
     try {
-      await player.playTrack({ track: nextTrack.track });
+      await player.playTrack({ track: { encoded: nextTrack.track } });
       queue.setCurrentIndex(nextIndex);
       this.lastPlaybackError.delete(guildId);
       this.logger.log(`Playing track: ${nextTrack.info.title} in guild ${guildId}`);
@@ -513,7 +386,7 @@ export class PlayerManager {
     this.manualChangeInProgress.add(guildId);
     try {
       if (player.track) await player.stopTrack();
-      await player.playTrack({ track: currentTrack.track });
+      await player.playTrack({ track: { encoded: currentTrack.track } });
       this.lastPlaybackError.delete(guildId);
       this.logger.log(`Replaying track: ${currentTrack.info.title} in guild ${guildId}`);
       this.events.emit(guildId, 'track_play');
@@ -554,7 +427,7 @@ export class PlayerManager {
       if (player.track) {
         await player.stopTrack();
       }
-      await player.playTrack({ track: prevTrack.track });
+      await player.playTrack({ track: { encoded: prevTrack.track } });
       queue.setCurrentIndex(prevIndex);
       this.lastPlaybackError.delete(guildId);
       this.playbackActive.set(guildId, true);
@@ -586,7 +459,7 @@ export class PlayerManager {
     try {
       this.setManualChangeInProgress(guildId, true);
       if (player.track) await player.stopTrack();
-      await player.playTrack({ track: track.track });
+      await player.playTrack({ track: { encoded: track.track } });
       queue.setCurrentIndex(index);
       this.lastPlaybackError.delete(guildId);
       this.playbackActive.set(guildId, true);
@@ -624,7 +497,7 @@ export class PlayerManager {
       }
       return;
     }
-    if (player.connection.state !== 1) {
+    if (this.getConnection(guildId)?.state !== 1) {
       this.playNext(guildId);
       return;
     }
@@ -632,7 +505,7 @@ export class PlayerManager {
     const track = all[randomIndex];
     this.resetInactivityTimer(guildId);
     try {
-      await player.playTrack({ track: track.track });
+      await player.playTrack({ track: { encoded: track.track } });
       queue.setCurrentIndex(randomIndex);
       this.lastPlaybackError.delete(guildId);
       this.playbackActive.set(guildId, true);

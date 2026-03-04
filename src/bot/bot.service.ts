@@ -170,7 +170,7 @@ export class BotService implements OnModuleInit {
    * Настройка обработчиков событий Discord
    */
   private setupEventHandlers() {
-    this.client.once('ready', async () => {
+    this.client.once('clientReady', async () => {
       this.logger.log(`Бот запущен как ${this.client.user?.tag}`);
 
       // Статус бота: "Слушает <текст>"

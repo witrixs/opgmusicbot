@@ -162,7 +162,7 @@ export class MusicApiController {
 
     const existingPlayer = this.playerManager.getPlayer(guildId);
     const botChannelId =
-      existingPlayer?.connection?.state === 1 ? (existingPlayer?.connection?.channelId ?? null) : null;
+      (this.playerManager.getConnection(guildId)?.state === 1 ? this.playerManager.getConnection(guildId)?.channelId ?? null : null);
 
     // Если бот уже в voice — запрещаем "перетягивать" управление из другого канала
     const userVoiceChannelId = await this.assertUserCanControl(req, guildId, botChannelId);
@@ -189,7 +189,7 @@ export class MusicApiController {
     const guildId = this.requireGuildId(body.guildId);
     const existingPlayer = this.playerManager.getPlayer(guildId);
     const botChannelId =
-      existingPlayer?.connection?.state === 1 ? (existingPlayer?.connection?.channelId ?? null) : null;
+      (this.playerManager.getConnection(guildId)?.state === 1 ? this.playerManager.getConnection(guildId)?.channelId ?? null : null);
     await this.assertUserCanControl(req, guildId, botChannelId);
     await this.musicService.pause(guildId);
     return this.buildState(guildId);
@@ -200,7 +200,7 @@ export class MusicApiController {
     const guildId = this.requireGuildId(body.guildId);
     const existingPlayer = this.playerManager.getPlayer(guildId);
     const botChannelId =
-      existingPlayer?.connection?.state === 1 ? (existingPlayer?.connection?.channelId ?? null) : null;
+      (this.playerManager.getConnection(guildId)?.state === 1 ? this.playerManager.getConnection(guildId)?.channelId ?? null : null);
     await this.assertUserCanControl(req, guildId, botChannelId);
     await this.musicService.resume(guildId);
     return this.buildState(guildId);
@@ -211,7 +211,7 @@ export class MusicApiController {
     const guildId = this.requireGuildId(body.guildId);
     const existingPlayer = this.playerManager.getPlayer(guildId);
     const botChannelId =
-      existingPlayer?.connection?.state === 1 ? (existingPlayer?.connection?.channelId ?? null) : null;
+      (this.playerManager.getConnection(guildId)?.state === 1 ? this.playerManager.getConnection(guildId)?.channelId ?? null : null);
     await this.assertUserCanControl(req, guildId, botChannelId);
     await this.musicService.skip(guildId);
     return this.buildState(guildId);
@@ -222,7 +222,7 @@ export class MusicApiController {
     const guildId = this.requireGuildId(body.guildId);
     const existingPlayer = this.playerManager.getPlayer(guildId);
     const botChannelId =
-      existingPlayer?.connection?.state === 1 ? (existingPlayer?.connection?.channelId ?? null) : null;
+      (this.playerManager.getConnection(guildId)?.state === 1 ? this.playerManager.getConnection(guildId)?.channelId ?? null : null);
     await this.assertUserCanControl(req, guildId, botChannelId);
     await this.musicService.previous(guildId);
     return this.buildState(guildId);
@@ -240,7 +240,7 @@ export class MusicApiController {
     }
     const existingPlayer = this.playerManager.getPlayer(guildId);
     const botChannelId =
-      existingPlayer?.connection?.state === 1 ? (existingPlayer?.connection?.channelId ?? null) : null;
+      (this.playerManager.getConnection(guildId)?.state === 1 ? this.playerManager.getConnection(guildId)?.channelId ?? null : null);
     await this.assertUserCanControl(req, guildId, botChannelId);
     this.musicService.seek(guildId, position);
     return this.buildState(guildId);
@@ -272,7 +272,7 @@ export class MusicApiController {
     const guildId = this.requireGuildId(body.guildId);
     const existingPlayer = this.playerManager.getPlayer(guildId);
     const botChannelId =
-      existingPlayer?.connection?.state === 1 ? (existingPlayer?.connection?.channelId ?? null) : null;
+      (this.playerManager.getConnection(guildId)?.state === 1 ? this.playerManager.getConnection(guildId)?.channelId ?? null : null);
     await this.assertUserCanControl(req, guildId, botChannelId);
     await this.musicService.stop(guildId);
     return this.buildState(guildId);
@@ -287,7 +287,7 @@ export class MusicApiController {
     const guildId = this.requireGuildId(body.guildId);
     const existingPlayer = this.playerManager.getPlayer(guildId);
     const botChannelId =
-      existingPlayer?.connection?.state === 1 ? (existingPlayer?.connection?.channelId ?? null) : null;
+      (this.playerManager.getConnection(guildId)?.state === 1 ? this.playerManager.getConnection(guildId)?.channelId ?? null : null);
     await this.assertUserCanControl(req, guildId, botChannelId);
 
     const queue = this.playerManager.getQueue(guildId);
@@ -310,7 +310,7 @@ export class MusicApiController {
     const guildId = this.requireGuildId(body.guildId);
     const existingPlayer = this.playerManager.getPlayer(guildId);
     const botChannelId =
-      existingPlayer?.connection?.state === 1 ? (existingPlayer?.connection?.channelId ?? null) : null;
+      (this.playerManager.getConnection(guildId)?.state === 1 ? this.playerManager.getConnection(guildId)?.channelId ?? null : null);
     await this.assertUserCanControl(req, guildId, botChannelId);
     const index = typeof body.index === 'number' ? body.index : -1;
     const queue = this.playerManager.getQueue(guildId);
@@ -331,7 +331,7 @@ export class MusicApiController {
     const guildId = this.requireGuildId(body.guildId);
     const existingPlayer = this.playerManager.getPlayer(guildId);
     const botChannelId =
-      existingPlayer?.connection?.state === 1 ? (existingPlayer?.connection?.channelId ?? null) : null;
+      (this.playerManager.getConnection(guildId)?.state === 1 ? this.playerManager.getConnection(guildId)?.channelId ?? null : null);
     await this.assertUserCanControl(req, guildId, botChannelId);
 
     const fromIndex = typeof body.fromIndex === 'number' ? body.fromIndex : -1;
@@ -399,7 +399,10 @@ export class MusicApiController {
         : undefined;
 
     return {
-      botConnected: Boolean(player?.connection?.channelId) && player.connection.state === 1,
+      botConnected: (() => {
+        const conn = this.playerManager.getConnection(guildId);
+        return Boolean(conn?.channelId) && conn?.state === 1;
+      })(),
       guildId,
       playerState: {
         currentTrack,
