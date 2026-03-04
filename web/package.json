@@ -1,6 +1,6 @@
 {
   "name": "frontend-opgbot",
-  "version": "2.0.0",
+  "version": "2.1.7",
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
