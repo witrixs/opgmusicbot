@@ -103,7 +103,7 @@ plugins:
    - В разделе **Credentials** создай OAuth Client ID (типа `Web application` или `Desktop app`).  
 
 2. **Открой OAuth 2.0 Playground**  
-   - Перейди на `https://developers.google.com/oauthplayground`.  
+   - Перейди на `https://console.cloud.google.com/apis/dashboard`.  
    - Справа сверху нажми **⚙️ Settings** → включи **Use your own OAuth credentials** и введи **Client ID / Client Secret** из шага выше.  
 
 3. **Получение авторизационного кода**  
