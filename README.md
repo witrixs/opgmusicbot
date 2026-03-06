@@ -70,8 +70,37 @@ curl -fsSL https://raw.githubusercontent.com/witrixs/opgmusicbot/main/scripts/sc
 В `lavalink/application.yml` задайте пароль (`lavalink.server.password`) и при необходимости YouTube `refreshToken`. Тот же пароль укажите в `.env` бота как `LAVALINK_PASSWORD`. Запуск:
 
 ```bash
+git clone https://github.com/witrixs/opgmusicbot.git
+
+sudo apt install openjdk-17-jre-headless -y
+```
+
+```bash
 cd lavalink
 java -jar Lavalink.jar
+```
+
+Лиобо же в pm2
+
+## Install Node.js через nvm
+
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+source ~/.bashrc
+nvm install --lts
+```
+
+## Установка зависимостей
+```bash
+sudo apt-get install -y iptables
+sudo apt-get install gawk
+sudo apt-get install csvtool
+npm install pm2 -g
+```
+
+```bash
+cd lavalink
+pm2 start
 ```
 
 Сервер слушает порт **2333**. При `network_mode: host` у бота в `.env` укажите `LAVALINK_HOST=localhost`.
