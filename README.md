@@ -124,31 +124,17 @@ plugins:
       skipInitialization: true
 ```
 
-Как получить `refreshToken` (через Google OAuth Playground — самый простой способ):
+Как получить `refreshToken` (через youfresh — самый простой способ):
 
-1. **Создай проект в Google Cloud**  
-   - Зайди в Google Cloud Console → включи **YouTube Data API v3**.  
-   - Настрой **OAuth consent screen** (достаточно базовой конфигурации).  
-   - В разделе **Credentials** создай OAuth Client ID (типа `Web application` или `Desktop app`).  
+Сервис делает то же, что Lavalink: устройство-код OAuth, на выходе — refresh token.
 
-2. **Открой OAuth 2.0 Playground**  
-   - Перейди на `https://console.cloud.google.com/apis/dashboard`.  
-   - Справа сверху нажми **⚙️ Settings** → включи **Use your own OAuth credentials** и введи **Client ID / Client Secret** из шага выше.  
+Открой: https://youfresh.thiranjaya.com/
+Нажми "Start YouTube Authentication".
+Войди в отдельный/одноразовый Google-аккаунт (не основной).
+После входа скопируй выданный refresh token.
+Вставь его в application.yml Lavalink в поле refreshToken.
+Важно: используй отдельный аккаунт, не основной — токен даёт доступ к YouTube от имени этого аккаунта.
 
-3. **Получение авторизационного кода**  
-   - В списке API найди **YouTube Data API v3**.  
-   - Отметь нужные scope'ы, обычно достаточно:  
-     - `https://www.googleapis.com/auth/youtube.readonly`  
-   - Нажми **Authorize APIs**, залогинься в нужный Google аккаунт и выдай доступ.  
-
-4. **Обмен кода на токены**  
-   - После авторизации вернёшься в Playground.  
-   - Нажми **Exchange authorization code for tokens**.  
-   - Внизу появится **access_token** и **refresh_token** — скопируй **`refresh_token`**.  
-
-5. **Пропиши токен в `application.yml`**  
-   - Вставь полученное значение в `plugins.youtube.oauth.refreshToken`.  
-   - `skipInitialization` можно оставить в `true`, когда токен уже прописан.  
 
 ⚠️ Никогда не публикуй реальный `refreshToken` в публичном репозитории — используй плейсхолдеры в `application.yml` или отдельный `application.example.yml` для GitHub.
 
