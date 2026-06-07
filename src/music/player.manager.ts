@@ -391,9 +391,12 @@ export class PlayerManager {
       this.logger.log(`Replaying track: ${currentTrack.info.title} in guild ${guildId}`);
       this.events.emit(guildId, 'track_play');
     } catch (error) {
-      this.manualChangeInProgress.delete(guildId);
       this.logger.error(`Error replaying track in guild ${guildId}: ${(error as Error).message}`);
       this.playNext(guildId);
+    } finally {
+      // Сбрасываем флаг с задержкой: 'end' от stopTrack() приходит асинхронно.
+      // Иначе флаг остался бы true навсегда и заблокировал авто-переход треков.
+      setTimeout(() => this.setManualChangeInProgress(guildId, false), 400);
     }
   }
 
@@ -434,7 +437,6 @@ export class PlayerManager {
       this.logger.log(`Playing previous track: ${prevTrack.info.title} in guild ${guildId}`);
       this.events.emit(guildId, 'track_play');
     } catch (error) {
-      this.manualChangeInProgress.delete(guildId);
       this.logger.error(`Error playing previous track in guild ${guildId}: ${error.message}`);
       this.lastPlaybackError.set(guildId, {
         at: Date.now(),
@@ -442,6 +444,10 @@ export class PlayerManager {
         message: (error as Error).message,
       });
       this.playNext(guildId);
+    } finally {
+      // Сбрасываем флаг с задержкой: 'end' от stopTrack() приходит асинхронно.
+      // Иначе флаг остался бы true навсегда и заблокировал авто-переход треков.
+      setTimeout(() => this.setManualChangeInProgress(guildId, false), 400);
     }
   }
 

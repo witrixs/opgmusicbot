@@ -373,11 +373,18 @@ export class MusicService {
 
     // Флаг: не реагировать на 'end' от stopTrack(), иначе playNext вызовется дважды
     this.playerManager.setManualChangeInProgress(guildId, true);
-    await player.stopTrack();
-    this.events.emit(guildId, 'track_skip');
+    try {
+      await player.stopTrack();
+      this.events.emit(guildId, 'track_skip');
 
-    await this.playerManager.playNext(guildId);
-    
+      await this.playerManager.playNext(guildId);
+    } finally {
+      // Сбрасываем флаг с задержкой: 'end' от stopTrack() приходит асинхронно.
+      // Без сброса флаг остался бы true навсегда и блокировал авто-переход
+      // на следующий трек по окончании текущего.
+      setTimeout(() => this.playerManager.setManualChangeInProgress(guildId, false), 400);
+    }
+
     const nextTrackInfo = queue.current();
     if (!nextTrackInfo) {
       return '⏭️ Трек пропущен. Очередь пуста';
