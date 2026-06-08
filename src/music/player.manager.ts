@@ -30,6 +30,8 @@ export class PlayerManager {
   private shuffleMode: Map<string, boolean> = new Map();
   /** При ручной смене трека (skip/previous) не реагировать на 'end', чтобы не вызывать playNext дважды */
   private manualChangeInProgress: Set<string> = new Set();
+  /** Защита от параллельных вызовов playNext для одной гильдии (иначе каскадный скип очереди) */
+  private playNextInProgress: Set<string> = new Set();
 
   constructor(
     private readonly events: MusicEventsService,
@@ -121,6 +123,7 @@ export class PlayerManager {
     this.repeatMode.delete(guildId);
     this.shuffleMode.delete(guildId);
     this.manualChangeInProgress.delete(guildId);
+    this.playNextInProgress.delete(guildId);
 
     // Вызываем callback для удаления сообщения с плеером (если установлен)
     if (this.onCleanupCallback) {
@@ -209,21 +212,29 @@ export class PlayerManager {
       this.events.emit(guildId, 'track_start');
     });
 
-    player.on('end', () => {
+    player.on('end', (data) => {
+      const reason = data?.reason;
+
+      // Только 'finished' и 'loadFailed' означают, что трек реально завершился
+      // и нужно перейти к следующему. Остальные причины — побочные эффекты
+      // наших собственных действий, и переход по ним вызывает каскадный скип:
+      //  - 'replaced' — мы сами запустили новый трек через playTrack();
+      //  - 'stopped'  — трек остановлен вручную (skip/stop/смена трека);
+      //  - 'cleanup'  — плеер уничтожен.
+      if (reason !== 'finished' && reason !== 'loadFailed') {
+        this.logger.log(`Track end ignored (reason=${reason ?? 'unknown'}) in guild ${guildId}`);
+        return;
+      }
+
       if (this.manualChangeInProgress.has(guildId)) {
         this.logger.log(`Track end ignored (manual change) in guild ${guildId}`);
         return;
       }
-      this.logger.log(`Track ended in guild ${guildId}`);
+
+      this.logger.log(`Track ended in guild ${guildId} (reason=${reason})`);
       this.playbackActive.set(guildId, false);
       this.events.emit(guildId, 'track_end');
-      if (this.getRepeatMode(guildId) === 'one') {
-        this.replayCurrent(guildId);
-      } else if (this.getShuffleMode(guildId)) {
-        this.playRandom(guildId);
-      } else {
-        this.playNext(guildId);
-      }
+      this.advanceQueue(guildId);
     });
 
     player.on('exception', (data) => {
@@ -243,14 +254,20 @@ export class PlayerManager {
           (exc?.severity ? ` severity="${exc.severity}"` : ''),
       );
 
-      const queue = this.getQueue(guildId);
-      const idx = queue.getCurrentIndex();
-      if (idx >= 0) {
-        queue.remove(idx);
-      }
       this.playbackActive.set(guildId, false);
       this.events.emit(guildId, 'track_exception');
-      this.playNext(guildId);
+      // ВАЖНО: не вызываем здесь playNext(). После 'exception' Lavalink всегда
+      // присылает 'end' с reason='loadFailed', который и выполнит переход к
+      // следующему треку. Двойной переход приводил к каскадному скипу очереди.
+    });
+
+    player.on('stuck', (data) => {
+      this.logger.warn(`Track stuck in guild ${guildId} (threshold=${data?.thresholdMs ?? '?'}ms), skipping`);
+      // 'stuck' не сопровождается событием 'end', поэтому переход выполняем сами.
+      if (this.manualChangeInProgress.has(guildId)) return;
+      this.playbackActive.set(guildId, false);
+      this.events.emit(guildId, 'track_stuck');
+      this.advanceQueue(guildId);
     });
 
     player.on('closed', (data) => {
@@ -273,6 +290,21 @@ export class PlayerManager {
   }
 
   /**
+   * Перейти к следующему треку с учётом текущего режима (repeat one / shuffle / обычный).
+   * Используется обработчиками событий 'end' и 'stuck', чтобы логика была единой.
+   * @param {string} guildId - ID гильдии Discord
+   */
+  private advanceQueue(guildId: string): void {
+    if (this.getRepeatMode(guildId) === 'one') {
+      void this.replayCurrent(guildId);
+    } else if (this.getShuffleMode(guildId)) {
+      void this.playRandom(guildId);
+    } else {
+      void this.playNext(guildId);
+    }
+  }
+
+  /**
    * Воспроизвести следующий трек из очереди
    * @param {string} guildId - ID гильдии Discord
    */
@@ -285,85 +317,102 @@ export class PlayerManager {
       return;
     }
 
-    let connection = this.getConnection(guildId);
-    this.logger.log(`Connection state before play: ${connection?.state ?? 'none'}, channelId: ${connection?.channelId ?? 'none'}`);
-
-    if (!connection || connection.state !== 1) {
-      this.logger.log(`Waiting for voice connection to be ready for guild ${guildId}...`);
-      await new Promise<void>((resolve, reject) => {
-        const conn = connection ?? this.getConnection(guildId);
-        if (conn?.state === 1) {
-          resolve();
-          return;
-        }
-        const timeout = setTimeout(() => {
-          conn?.off('connectionUpdate', onReady);
-          reject(new Error('Voice connection timeout'));
-        }, 20000);
-
-        const onReady = (state: number) => {
-          if (state !== 0) return; // 0 = SESSION_READY
-          clearTimeout(timeout);
-          conn?.off('connectionUpdate', onReady);
-          this.logger.log(`Voice connection ready, proceeding with playback for guild ${guildId}`);
-          resolve();
-        };
-
-        if (conn) {
-          conn.once('connectionUpdate', onReady);
-        } else {
-          reject(new Error('Voice connection not found'));
-        }
-      }).catch((error) => {
-        this.logger.error(`Error waiting for voice connection: ${error.message}`);
-        throw error;
-      });
-    }
-
-    // ВАЖНО: не двигаем currentIndex, пока playTrack не прошёл успешно
-    const currentIndex = queue.getCurrentIndex();
-    const nextIndex = currentIndex + 1;
-    const all = queue.getAll();
-    const nextTrack = nextIndex >= 0 && nextIndex < all.length ? all[nextIndex] : null;
-
-    if (!nextTrack) {
-      this.logger.log(`Queue is empty for guild ${guildId}`);
-      this.playbackActive.set(guildId, false);
-      // сообщаем UI что сейчас нечего играть
-      this.events.emit(guildId, 'queue_empty');
-      // Запускаем таймер неактивности
-      this.startInactivityTimer(guildId);
-      // Вызываем callback для удаления сообщения с плеером
-      if (this.onQueueEmptyCallback) {
-        try {
-          await this.onQueueEmptyCallback(guildId);
-        } catch (error) {
-          this.logger.error(`Error in onQueueEmptyCallback: ${error.message}`);
-        }
-      }
+    // Защита от повторного входа: если playNext уже выполняется для этой гильдии
+    // (например, событие пришло во время ожидания playTrack), не запускаем вторую цепочку.
+    if (this.playNextInProgress.has(guildId)) {
+      this.logger.log(`playNext already in progress for guild ${guildId}, skipping duplicate call`);
       return;
     }
-
-    // Сбрасываем таймер неактивности при воспроизведении нового трека
-    this.resetInactivityTimer(guildId);
+    this.playNextInProgress.add(guildId);
 
     try {
-      await player.playTrack({ track: { encoded: nextTrack.track } });
-      queue.setCurrentIndex(nextIndex);
-      this.lastPlaybackError.delete(guildId);
-      this.logger.log(`Playing track: ${nextTrack.info.title} in guild ${guildId}`);
-      this.events.emit(guildId, 'track_play');
-    } catch (error) {
-      this.logger.error(`Error playing track in guild ${guildId}: ${error.message}`);
-      this.lastPlaybackError.set(guildId, {
-        at: Date.now(),
-        error: 'playTrack failed',
-        message: error.message,
-      });
-      // Удаляем проблемный трек и пытаемся следующий
-      queue.remove(nextIndex);
-      this.events.emit(guildId, 'track_play_failed');
-      this.playNext(guildId);
+      let connection = this.getConnection(guildId);
+      this.logger.log(`Connection state before play: ${connection?.state ?? 'none'}, channelId: ${connection?.channelId ?? 'none'}`);
+
+      if (!connection || connection.state !== 1) {
+        this.logger.log(`Waiting for voice connection to be ready for guild ${guildId}...`);
+        await new Promise<void>((resolve, reject) => {
+          const conn = connection ?? this.getConnection(guildId);
+          if (conn?.state === 1) {
+            resolve();
+            return;
+          }
+          const timeout = setTimeout(() => {
+            conn?.off('connectionUpdate', onReady);
+            reject(new Error('Voice connection timeout'));
+          }, 20000);
+
+          const onReady = (state: number) => {
+            if (state !== 0) return; // 0 = SESSION_READY
+            clearTimeout(timeout);
+            conn?.off('connectionUpdate', onReady);
+            this.logger.log(`Voice connection ready, proceeding with playback for guild ${guildId}`);
+            resolve();
+          };
+
+          if (conn) {
+            conn.once('connectionUpdate', onReady);
+          } else {
+            reject(new Error('Voice connection not found'));
+          }
+        }).catch((error) => {
+          this.logger.error(`Error waiting for voice connection: ${error.message}`);
+          throw error;
+        });
+      }
+
+      // Перебираем треки в очереди, пока какой-нибудь не запустится успешно.
+      // Цикл (вместо рекурсии) нужен, чтобы пропуск нерабочих треков не нарушал
+      // защиту от повторного входа playNextInProgress.
+      while (true) {
+        // ВАЖНО: не двигаем currentIndex, пока playTrack не прошёл успешно
+        const currentIndex = queue.getCurrentIndex();
+        const nextIndex = currentIndex + 1;
+        const all = queue.getAll();
+        const nextTrack = nextIndex >= 0 && nextIndex < all.length ? all[nextIndex] : null;
+
+        if (!nextTrack) {
+          this.logger.log(`Queue is empty for guild ${guildId}`);
+          this.playbackActive.set(guildId, false);
+          // сообщаем UI что сейчас нечего играть
+          this.events.emit(guildId, 'queue_empty');
+          // Запускаем таймер неактивности
+          this.startInactivityTimer(guildId);
+          // Вызываем callback для удаления сообщения с плеером
+          if (this.onQueueEmptyCallback) {
+            try {
+              await this.onQueueEmptyCallback(guildId);
+            } catch (error) {
+              this.logger.error(`Error in onQueueEmptyCallback: ${error.message}`);
+            }
+          }
+          return;
+        }
+
+        // Сбрасываем таймер неактивности при воспроизведении нового трека
+        this.resetInactivityTimer(guildId);
+
+        try {
+          await player.playTrack({ track: { encoded: nextTrack.track } });
+          queue.setCurrentIndex(nextIndex);
+          this.lastPlaybackError.delete(guildId);
+          this.logger.log(`Playing track: ${nextTrack.info.title} in guild ${guildId}`);
+          this.events.emit(guildId, 'track_play');
+          return;
+        } catch (error) {
+          this.logger.error(`Error playing track in guild ${guildId}: ${error.message}`);
+          this.lastPlaybackError.set(guildId, {
+            at: Date.now(),
+            error: 'playTrack failed',
+            message: error.message,
+          });
+          // Удаляем проблемный трек и пробуем следующий в этой же итерации цикла
+          queue.remove(nextIndex);
+          this.events.emit(guildId, 'track_play_failed');
+        }
+      }
+    } finally {
+      this.playNextInProgress.delete(guildId);
     }
   }
 
