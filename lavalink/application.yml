@@ -8,7 +8,7 @@ lavalink:
     sources:
       youtube: false  # Отключаем встроенный источник
   plugins:
-    - dependency: "dev.lavalink.youtube:youtube-plugin:1.16.0"
+    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.1"
       repository: "https://maven.lavalink.dev/releases"
 
 plugins:
@@ -17,7 +17,24 @@ plugins:
     allowSearch: true
     allowDirectVideoIds: true
     allowDirectPlaylistIds: true
+    # Порядок клиентов важен. Google перестал отдавать потоки для клиента WEB,
+    # поэтому он больше НЕ должен стоять первым — иначе массово получаем
+    # "This video is unavailable". Первыми ставим TV/TVHTML5EMBEDDED и мобильные
+    # клиенты, а WEB/WEBEMBEDDED оставляем в конце как запасной вариант.
+    clients:
+      - MUSIC
+      - TVHTML5EMBEDDED
+      - TV
+      - ANDROID_VR
+      - WEBEMBEDDED
+      - WEB
+    # OAuth — самый надёжный способ обойти блокировки. Чтобы включить:
+    #  1) поставить enabled: true и убрать refreshToken;
+    #  2) при первом запуске Lavalink в логах появится ссылка и код для входа
+    #     в аккаунт Google (используйте отдельный/не основной аккаунт!);
+    #  3) после авторизации Lavalink выведет refreshToken — вставьте его сюда.
+    # Пустой refreshToken при enabled: true ничего не делает, поэтому пока выключено.
     oauth:
-      enabled: true
-      refreshToken: "" # Токен YouTube
-      skipInitialization: true
+      enabled: false
+      # refreshToken: "" # Токен YouTube
+      # skipInitialization: true

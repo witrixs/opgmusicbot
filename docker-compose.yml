@@ -1,6 +1,7 @@
 services:
   bot:
-    image: witrixs/opgmusicbot:latest
+    image: opgmusicbot:latest
+    build: .
     container_name: opgmusic
     restart: always
     env_file: .env

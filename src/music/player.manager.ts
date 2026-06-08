@@ -32,6 +32,10 @@ export class PlayerManager {
   private manualChangeInProgress: Set<string> = new Set();
   /** Защита от параллельных вызовов playNext для одной гильдии (иначе каскадный скип очереди) */
   private playNextInProgress: Set<string> = new Set();
+  /** Счётчик подряд идущих сбоев загрузки трека (источник недоступен) */
+  private consecutiveFailures: Map<string, number> = new Map();
+  /** Максимум подряд идущих сбоев, после которого прекращаем прокрутку очереди */
+  private static readonly MAX_CONSECUTIVE_FAILURES = 5;
 
   constructor(
     private readonly events: MusicEventsService,
@@ -124,6 +128,7 @@ export class PlayerManager {
     this.shuffleMode.delete(guildId);
     this.manualChangeInProgress.delete(guildId);
     this.playNextInProgress.delete(guildId);
+    this.consecutiveFailures.delete(guildId);
 
     // Вызываем callback для удаления сообщения с плеером (если установлен)
     if (this.onCleanupCallback) {
@@ -209,6 +214,8 @@ export class PlayerManager {
     // Обработка событий плеера
     player.on('start', () => {
       this.playbackActive.set(guildId, true);
+      // Трек реально начал играть — сбрасываем счётчик подряд идущих сбоев.
+      this.consecutiveFailures.set(guildId, 0);
       this.events.emit(guildId, 'track_start');
     });
 
@@ -234,6 +241,14 @@ export class PlayerManager {
       this.logger.log(`Track ended in guild ${guildId} (reason=${reason})`);
       this.playbackActive.set(guildId, false);
       this.events.emit(guildId, 'track_end');
+
+      // Если трек не загрузился (источник недоступен) — считаем подряд идущие сбои.
+      // Когда их слишком много, источник скорее всего сломан целиком (напр. блокировка
+      // YouTube), и нет смысла мгновенно пролистывать всю очередь — останавливаемся.
+      if (reason === 'loadFailed' && this.registerFailureAndShouldStop(guildId)) {
+        return;
+      }
+
       this.advanceQueue(guildId);
     });
 
@@ -287,6 +302,45 @@ export class PlayerManager {
       this.queues.set(guildId, new Queue());
     }
     return this.queues.get(guildId)!;
+  }
+
+  /**
+   * Учесть очередной сбой загрузки трека. Возвращает true, если сбоев подряд стало
+   * слишком много и прокрутку очереди нужно прекратить.
+   * @param {string} guildId - ID гильдии Discord
+   */
+  private registerFailureAndShouldStop(guildId: string): boolean {
+    const fails = (this.consecutiveFailures.get(guildId) ?? 0) + 1;
+    this.consecutiveFailures.set(guildId, fails);
+    if (fails >= PlayerManager.MAX_CONSECUTIVE_FAILURES) {
+      this.logger.error(
+        `Too many consecutive load failures (${fails}) in guild ${guildId}. ` +
+          `Источник, вероятно, недоступен (напр. блокировка YouTube). Останавливаю воспроизведение.`,
+      );
+      void this.stopDueToFailures(guildId);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Остановить воспроизведение из-за серии сбоев источника: сбросить состояние,
+   * сообщить UI и запустить таймер неактивности. Очередь при этом не очищается —
+   * пользователь может попробовать снова, когда источник заработает.
+   * @param {string} guildId - ID гильдии Discord
+   */
+  private async stopDueToFailures(guildId: string): Promise<void> {
+    this.playbackActive.set(guildId, false);
+    this.consecutiveFailures.set(guildId, 0);
+    this.events.emit(guildId, 'playback_failed');
+    this.startInactivityTimer(guildId);
+    if (this.onQueueEmptyCallback) {
+      try {
+        await this.onQueueEmptyCallback(guildId);
+      } catch (error) {
+        this.logger.error(`Error in onQueueEmptyCallback (playback_failed): ${(error as Error).message}`);
+      }
+    }
   }
 
   /**
@@ -409,6 +463,10 @@ export class PlayerManager {
           // Удаляем проблемный трек и пробуем следующий в этой же итерации цикла
           queue.remove(nextIndex);
           this.events.emit(guildId, 'track_play_failed');
+          // Если playTrack стабильно падает — не пролистываем всю очередь, останавливаемся.
+          if (this.registerFailureAndShouldStop(guildId)) {
+            return;
+          }
         }
       }
     } finally {
