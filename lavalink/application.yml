@@ -8,8 +8,9 @@ lavalink:
     sources:
       youtube: false  # Отключаем встроенный источник
   plugins:
-    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.1"
-      repository: "https://maven.lavalink.dev/releases"
+    # 1.18.2: TV падает с "The page needs to be reloaded". Snapshot с фиксом.
+    - dependency: "dev.lavalink.youtube:youtube-plugin:2be8e542d3f6f178e048dca565892684c2e40177"
+      snapshot: true
 
 plugins:
   youtube:
@@ -17,15 +18,13 @@ plugins:
     allowSearch: true
     allowDirectVideoIds: true
     allowDirectPlaylistIds: true
-    # Порядок клиентов важен. Google перестал отдавать потоки для клиента WEB,
-    # поэтому он больше НЕ должен стоять первым — иначе массово получаем
-    # "This video is unavailable". Первыми ставим TV/TVHTML5EMBEDDED и мобильные
-    # клиенты, а WEB/WEBEMBEDDED оставляем в конце как запасной вариант.
+    # TV первым — единственный клиент с OAuth. Дальше MWEB/IOS и т.д.
     clients:
       - MUSIC
-      - TVHTML5EMBEDDED
       - TV
-      - ANDROID_VR
+      - MWEB
+      - IOS
+      - ANDROID_MUSIC
       - WEBEMBEDDED
       - WEB
     # OAuth — самый надёжный способ обойти блокировки. Чтобы включить:
@@ -38,3 +37,8 @@ plugins:
       enabled: false
       # refreshToken: "" # Токен YouTube
       # skipInitialization: true
+    # Локальный cipher сломан (Must find sig function). Нужен remoteCipher.
+    # Публичный инстанс — быстрый старт; для продакшена лучше свой yt-cipher.
+    remoteCipher:
+      url: "https://cipher.kikkia.dev/"
+      userAgent: "opgmusicbot"
